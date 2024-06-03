@@ -43,24 +43,28 @@ func NewPrometheusMetrics() Prometheus {
 }
 
 type ApiMetrics struct {
-	RequestCounter          prometheus.Counter
-	CreateRequestDuration   *prometheus.HistogramVec
-	ActiveRequestGauge      prometheus.Gauge
-	UserStartRequestCounter *prometheus.CounterVec
+	RequestCounter             *prometheus.CounterVec
+	CreateRequestDuration      *prometheus.HistogramVec
+	ActiveRequestGauge         prometheus.Gauge
+	UserStartRequestCounter    *prometheus.CounterVec
+	ProductStartRequestCounter *prometheus.CounterVec
 }
 
 func NewApiMetrics() ApiMetrics {
 	return ApiMetrics{
-		RequestCounter: prometheus.NewCounter(prometheus.CounterOpts{
+		RequestCounter: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "test_counter",
 			Help: "Count how many report statements have been added",
-		}),
-		CreateRequestDuration: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "response_time_seconds",
-			Help:    "Histogram of response times for handler in seconds",
-			Buckets: []float64{1, 5, 10, 25, 50, 100, 300, 500, 1000, 5000, 10000},
 		},
-			[]string{"response_time_per_seconds"},
+			[]string{"handler_name"},
+		),
+		CreateRequestDuration: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "response_time_seconds",
+				Help:    "Histogram of response times for handler in seconds",
+				Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 30, 60, 120},
+			},
+			[]string{"handler_name", "status"},
 		),
 		ActiveRequestGauge: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "active_requests",
@@ -72,6 +76,13 @@ func NewApiMetrics() ApiMetrics {
 				Help: "Count of status returned by user.",
 			},
 			[]string{"user", "status"}, // labels
+		),
+		ProductStartRequestCounter: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "http_request_get_user_status_count", // metric name
+				Help: "Count of status returned by user.",
+			},
+			[]string{"product", "status"}, // labels
 		),
 	}
 }

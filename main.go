@@ -27,6 +27,18 @@ var (
 	BuildTime   = "undefined"
 )
 
+type ApiRest struct {
+	Metrics telemetry.Prometheus
+	Tracer  telemetryfs.Tracer
+}
+
+func NewApiRest(metrics telemetry.Prometheus, tracer telemetryfs.Tracer) *ApiRest {
+	return &ApiRest{
+		Metrics: metrics,
+		Tracer:  tracer,
+	}
+}
+
 func main() {
 	logger, err := telemetryfs.NewLogger()
 	if err != nil {
@@ -69,49 +81,11 @@ func main() {
 	}
 
 	router := NewServer(logger, tracer.OTelTracer)
-	router.Post("/", func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
+	apiRest := NewApiRest(appMetrics, tracer)
 
-		var status string
-		var user string
-		defer func() {
-			appMetrics.UserStartRequestCounter.WithLabelValues(user, status).Inc()
-		}()
-
-		var mr MyRequest
-		json.NewDecoder(r.Body).Decode(&mr)
-
-		appMetrics.ActiveRequestGauge.Inc()
-		defer appMetrics.ActiveRequestGauge.Dec()
-
-		_, span := tracer.OTelTracer.Start(r.Context(), "handler")
-		defer span.End()
-
-		if rand.Float32() > 0.8 {
-			status = "4xx"
-		} else {
-			status = "2xx"
-		}
-
-		user = mr.User
-		log.Println(user, status)
-
-		appMetrics.RequestCounter.Inc() // Increment the counter
-
-		rand.Seed(time.Now().UnixNano())
-		n := rand.Intn(7) + 1
-
-		timeDuration := time.Duration(n) * time.Second
-
-		time.Sleep(timeDuration)
-
-		duration := time.Since(start)
-
-		appMetrics.CreateRequestDuration.WithLabelValues(strconv.Itoa(int(duration.Seconds()))).Observe(duration.Seconds())
-		w.Write([]byte(status))
-	})
-
-	router.Handle("/metrics", promhttp.Handler()) // Expose the metrics endpoint
+	router.Post("/user", apiRest.GetUser())
+	router.Post("/product", apiRest.GetProduct())
+	router.Handle("/metrics", promhttp.Handler())
 
 	server := http.Server{
 		Addr:    ":8989",
@@ -146,25 +120,140 @@ func main() {
 		}
 	}()
 
-	wg.Add(1)
+	wg.Add(2)
 	go func() {
-		producer()
+		producerUser()
+	}()
+	go func() {
+		producerProduct()
 	}()
 	wg.Wait()
 }
 
-type MyRequest struct {
+func (a *ApiRest) GetUser() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
+		_, span := a.Tracer.OTelTracer.Start(r.Context(), "GetUser")
+		defer span.End()
+
+		var status string
+		var user string
+		defer func() {
+			a.Metrics.UserStartRequestCounter.WithLabelValues(user, status).Inc()
+		}()
+
+		var mr User
+		if err := json.NewDecoder(r.Body).Decode(&mr); err != nil {
+			http.Error(w, "Invalid request payload", http.StatusBadRequest)
+			status = "4xx"
+			return
+		}
+
+		a.Metrics.ActiveRequestGauge.Inc()
+		defer a.Metrics.ActiveRequestGauge.Dec()
+
+		if rand.Float32() > 0.8 {
+			status = "4xx"
+		} else {
+			status = "2xx"
+		}
+
+		user = mr.User
+		log.Println(user, status)
+
+		a.Metrics.RequestCounter.WithLabelValues("GetUser").Inc() // Increment the counter
+
+		rand.Seed(time.Now().UnixNano())
+		n := rand.Intn(7) + 1
+
+		timeDuration := time.Duration(n) * time.Second
+		time.Sleep(timeDuration)
+
+		duration := time.Since(start)
+		a.Metrics.CreateRequestDuration.WithLabelValues("GetUser", strconv.Itoa(int(duration.Seconds()))).Observe(duration.Seconds())
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(status))
+	}
+}
+
+func (a *ApiRest) GetProduct() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
+		_, span := a.Tracer.OTelTracer.Start(r.Context(), "GetProduct")
+		defer span.End()
+
+		var status string
+		var product string
+		defer func() {
+			a.Metrics.ProductStartRequestCounter.WithLabelValues(product, status).Inc()
+		}()
+
+		var mr Product
+		if err := json.NewDecoder(r.Body).Decode(&mr); err != nil {
+			http.Error(w, "Invalid request payload", http.StatusBadRequest)
+			status = "4xx"
+			return
+		}
+
+		a.Metrics.ActiveRequestGauge.Inc()
+		defer a.Metrics.ActiveRequestGauge.Dec()
+
+		if rand.Float32() > 0.8 {
+			status = "4xx"
+		} else {
+			status = "2xx"
+		}
+
+		product = mr.Product
+		log.Println(product, status)
+
+		a.Metrics.RequestCounter.WithLabelValues("GetProduct").Inc() // Increment the counter
+
+		rand.Seed(time.Now().UnixNano())
+		n := rand.Intn(7) + 1
+
+		timeDuration := time.Duration(n) * time.Second
+		time.Sleep(timeDuration)
+
+		duration := time.Since(start)
+		a.Metrics.CreateRequestDuration.WithLabelValues("GetProduct", strconv.Itoa(int(duration.Seconds()))).Observe(duration.Seconds())
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(status))
+	}
+}
+
+type User struct {
 	User string
 }
 
-func producer() {
-	userPool := []string{"bob", "alice", "jack"}
+type Product struct {
+	Product string
+}
+
+func producerUser() {
+	userPool := []string{"bob", "alice", "jack", "mike", "tiger", "panda", "dog"}
 	for {
-		postBody, _ := json.Marshal(MyRequest{
+		postBody, _ := json.Marshal(User{
 			User: userPool[rand.Intn(len(userPool))],
 		})
 		requestBody := bytes.NewBuffer(postBody)
-		http.Post("http://api:8989", "application/json", requestBody)
+		http.Post("http://api:8989/user", "application/json", requestBody)
+		time.Sleep(time.Second * 2)
+	}
+}
+
+func producerProduct() {
+	userPool := []string{"camiseta", "blusa", "calça", "jaqueta", "camisa"}
+	for {
+		postBody, _ := json.Marshal(Product{
+			Product: userPool[rand.Intn(len(userPool))],
+		})
+		requestBody := bytes.NewBuffer(postBody)
+		http.Post("http://api:8989/product", "application/json", requestBody)
 		time.Sleep(time.Second * 2)
 	}
 }
