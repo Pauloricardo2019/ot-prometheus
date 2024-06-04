@@ -1,16 +1,15 @@
 version: '3'
 
 services:
-  api:
-    container_name: api
-    build:
-        context: .
-        dockerfile: Dockerfile
-    ports:
-      - "1616:1616"
-      - "8989:8989"
-    networks:
-      - monitoring
+  # api:
+  #   container_name: api
+  #   build:
+  #       context: .
+  #       dockerfile: Dockerfile
+  #   ports:
+  #     - "1616:1616"
+  #     - "8989:8989"
+
 
   prometheus:
     image: prom/prometheus
@@ -22,8 +21,7 @@ services:
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--web.enable-lifecycle'
-    networks:
-      - monitoring
+
 
   grafana:
     image: grafana/grafana
@@ -32,9 +30,5 @@ services:
       - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
-    networks:
-      - monitoring
 
-networks:
-  monitoring:
-    driver: bridge
+
