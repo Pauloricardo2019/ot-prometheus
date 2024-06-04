@@ -120,12 +120,10 @@ func main() {
 		}
 	}()
 
-	wg.Add(2)
+	wg.Add(1)
 	go func() {
-		producerUser()
-	}()
-	go func() {
-		producerProduct()
+		go producerProduct()
+		go producerUser()
 	}()
 	wg.Wait()
 }
@@ -171,7 +169,7 @@ func (a *ApiRest) GetUser() http.HandlerFunc {
 		time.Sleep(timeDuration)
 
 		duration := time.Since(start)
-		a.Metrics.CreateRequestDuration.WithLabelValues("GetUser", strconv.Itoa(int(duration.Seconds()))).Observe(duration.Seconds())
+		a.Metrics.CreateRequestDuration.WithLabelValues("GetUser", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(status))
@@ -219,7 +217,7 @@ func (a *ApiRest) GetProduct() http.HandlerFunc {
 		time.Sleep(timeDuration)
 
 		duration := time.Since(start)
-		a.Metrics.CreateRequestDuration.WithLabelValues("GetProduct", strconv.Itoa(int(duration.Seconds()))).Observe(duration.Seconds())
+		a.Metrics.CreateRequestDuration.WithLabelValues("GetProduct", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(status))
@@ -231,7 +229,7 @@ type User struct {
 }
 
 type Product struct {
-	Product string
+	Product string `json:"product"`
 }
 
 func producerUser() {
@@ -253,7 +251,10 @@ func producerProduct() {
 			Product: userPool[rand.Intn(len(userPool))],
 		})
 		requestBody := bytes.NewBuffer(postBody)
-		http.Post("http://api:8989/product", "application/json", requestBody)
+		_, err := http.Post("http://api:8989/product", "application/json", requestBody)
+		if err != nil {
+			fmt.Println("error on send post product", err)
+		}
 		time.Sleep(time.Second * 2)
 	}
 }

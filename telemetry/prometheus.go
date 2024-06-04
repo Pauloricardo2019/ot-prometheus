@@ -64,7 +64,7 @@ func NewApiMetrics() ApiMetrics {
 				Help:    "Histogram of response times for handler in seconds",
 				Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 30, 60, 120},
 			},
-			[]string{"handler_name", "status"},
+			[]string{"handler_name", "response_time"},
 		),
 		ActiveRequestGauge: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "active_requests",
@@ -79,7 +79,7 @@ func NewApiMetrics() ApiMetrics {
 		),
 		ProductStartRequestCounter: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "http_request_get_user_status_count", // metric name
+				Name: "http_request_get_product_status_count", // metric name
 				Help: "Count of status returned by user.",
 			},
 			[]string{"product", "status"}, // labels
