@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
@@ -383,10 +382,6 @@ func initMetricsCollector(appMetrics telemetry.Prometheus) {
 			time.Sleep(time.Second * 5)
 		}
 	}()
-
-	// Registre as métricas no registro do Prometheus
-	prometheus.MustRegister(appMetrics.MemoryUsageGauge)
-	prometheus.MustRegister(appMetrics.MemoryUsageGauge)
 }
 
 func getCpuUsage() float64 {
