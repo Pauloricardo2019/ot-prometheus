@@ -27,7 +27,7 @@ func NewMetricsServer(options ...Option) (*http.Server, error) {
 
 	server := &http.Server{
 		Handler: mux,
-		Addr:    ":9090",
+		Addr:    ":9191",
 	}
 	return server, nil
 }
