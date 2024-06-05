@@ -219,9 +219,16 @@ func main() {
 	go func() {
 		time.Sleep(time.Second)
 		producerProduct()
+	}()
+
+	wg.Add(1)
+	go func() {
+		time.Sleep(time.Second)
 		producerUser()
 	}()
+
 	wg.Wait()
+
 }
 
 func (a *ApiRest) GetUser() http.HandlerFunc {
