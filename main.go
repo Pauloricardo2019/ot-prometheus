@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"math/rand"
 	"net/http"
@@ -98,14 +97,7 @@ func (s *Service) GetUser(ctx context.Context, userID string) (string, error) {
 		return "", err
 	}
 
-	// Simulando uma chamada de API externa
-	// resp, err := s.callExternalAPI(ctx, "http://0.0.0.0:8989/user/"+userID)
-	resp, err := s.callExternalAPI(ctx, "http://0.0.0.0:8989/user")
-	if err != nil {
-		return "", err
-	}
-
-	return userData + " and " + resp, nil
+	return userData, nil
 }
 
 func (s *Service) GetProduct(ctx context.Context, productID string) (string, error) {
@@ -117,14 +109,7 @@ func (s *Service) GetProduct(ctx context.Context, productID string) (string, err
 		return "", err
 	}
 
-	// Simulando uma chamada de API externa
-	// resp, err := s.callExternalAPI(ctx, "http://0.0.0.0:8989/product"+productID)
-	resp, err := s.callExternalAPI(ctx, "http://0.0.0.0:8989/product")
-	if err != nil {
-		return "", err
-	}
-
-	return productData + " and " + resp, nil
+	return productData, nil
 }
 
 func (s *Service) callExternalAPI(ctx context.Context, url string) (string, error) {
@@ -232,6 +217,7 @@ func main() {
 
 	wg.Add(1)
 	go func() {
+		time.Sleep(time.Second)
 		producerProduct()
 		producerUser()
 	}()
@@ -386,45 +372,6 @@ func initMetricsCollector(appMetrics telemetry.Prometheus) {
 			time.Sleep(time.Second * 5)
 		}
 	}()
-}
-
-func getCpuUsage() float64 {
-	var (
-		usr1, sys1, idle1 uint64
-		usr2, sys2, idle2 uint64
-	)
-
-	content, err := ioutil.ReadFile("/proc/stat")
-	if err != nil {
-		log.Printf("Error reading /proc/stat: %v", err)
-		return 0
-	}
-
-	lines := strings.Split(string(content), "\n")
-	for _, line := range lines {
-		fields := strings.Fields(line)
-		// A primeira linha começa com 'cpu', que é o agregado de todas as CPUs
-		if len(fields) > 0 && fields[0] == "cpu" {
-			numFields := len(fields)
-			if numFields >= 5 {
-				usr1, _ = strconv.ParseUint(fields[1], 10, 64)
-				sys1, _ = strconv.ParseUint(fields[3], 10, 64)
-				idle1, _ = strconv.ParseUint(fields[4], 10, 64)
-			}
-			if numFields >= 8 {
-				usr2, _ = strconv.ParseUint(fields[1], 10, 64)
-				sys2, _ = strconv.ParseUint(fields[3], 10, 64)
-				idle2, _ = strconv.ParseUint(fields[4], 10, 64)
-			}
-			break
-		}
-	}
-
-	delta := float64(usr2 + sys2 - usr1 - sys1)
-	total := float64(usr2 + sys2 + idle2 - usr1 - sys1 - idle1)
-	cpuUsage := 100 * delta / total
-
-	return cpuUsage
 }
 
 func GetFreeMemory() (float64, error) {
