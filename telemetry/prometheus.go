@@ -48,8 +48,8 @@ type ApiMetrics struct {
 	ActiveRequestGauge         prometheus.Gauge
 	UserStartRequestCounter    *prometheus.CounterVec
 	ProductStartRequestCounter *prometheus.CounterVec
-	MemoryUsageGauge           *prometheus.Gauge
-	CpuUsageGauge              *prometheus.Gauge
+	MemoryUsageGauge           prometheus.Gauge
+	CpuUsageGauge              prometheus.Gauge
 }
 
 func NewApiMetrics() ApiMetrics {
@@ -86,17 +86,13 @@ func NewApiMetrics() ApiMetrics {
 			},
 			[]string{"product", "status"}, // labels
 		),
-
-		// // var (
-		// // 	memoryUsageGauge = prometheus.NewGauge(prometheus.GaugeOpts{
-		// // 		Name: "stone_app_memory_usage_bytes",
-		// // 		Help: "Current memory usage of the application in bytes.",
-		// // 	})
-		// // 	cpuUsageGauge = prometheus.NewGauge(prometheus.GaugeOpts{
-		// // 		Name: "stone_app_cpu_usage_percent",
-		// // 		Help: "Current CPU usage of the application as a percentage.",
-		// // 	})
-		// )
-
+		MemoryUsageGauge: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "stone_app_memory_usage_bytes",
+			Help: "Current memory usage of the application in bytes.",
+		}),
+		CpuUsageGauge: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "stone_app_cpu_usage_percent",
+			Help: "Current CPU usage of the application as a percentage.",
+		}),
 	}
 }

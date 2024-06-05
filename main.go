@@ -31,17 +31,6 @@ var (
 	BuildTime   = "undefined"
 )
 
-var (
-	memoryUsageGauge = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "stone_app_memory_usage_bytes",
-		Help: "Current memory usage of the application in bytes.",
-	})
-	cpuUsageGauge = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "stone_app_cpu_usage_percent",
-		Help: "Current CPU usage of the application as a percentage.",
-	})
-)
-
 type ApiRest struct {
 	Service *Service
 	Metrics telemetry.Prometheus
@@ -209,7 +198,7 @@ func main() {
 	}
 
 	// Iniciando a coleta de métricas de memória e CPU
-	initMetricsCollector()
+	initMetricsCollector(appMetrics)
 
 	wg := sync.WaitGroup{}
 
@@ -379,25 +368,25 @@ func NewServer(logger *zap.Logger, tracer trace.Tracer) *chi.Mux {
 	return router
 }
 
-func initMetricsCollector() {
+func initMetricsCollector(appMetrics telemetry.Prometheus) {
 	go func() {
 		for {
 			// Obtenha a memória alocada pelo programa
 			var m runtime.MemStats
 			runtime.ReadMemStats(&m)
-			memoryUsageGauge.Set(float64(m.Sys))
+			appMetrics.MemoryUsageGauge.Set(float64(m.Sys))
 
 			// Obtenha a utilização atual da CPU
 			cpuUsage := getCpuUsage()
-			cpuUsageGauge.Set(cpuUsage)
+			appMetrics.MemoryUsageGauge.Set(cpuUsage)
 
 			time.Sleep(time.Second * 5)
 		}
 	}()
 
 	// Registre as métricas no registro do Prometheus
-	prometheus.MustRegister(memoryUsageGauge)
-	prometheus.MustRegister(cpuUsageGauge)
+	prometheus.MustRegister(appMetrics.MemoryUsageGauge)
+	prometheus.MustRegister(appMetrics.MemoryUsageGauge)
 }
 
 func getCpuUsage() float64 {
