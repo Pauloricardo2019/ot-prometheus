@@ -35,6 +35,8 @@ func NewPrometheusMetrics() Prometheus {
 		apiMetrics.RequestCounter,
 		apiMetrics.ActiveRequestGauge,
 		apiMetrics.UserStartRequestCounter,
+		apiMetrics.MemoryUsageGauge,
+		apiMetrics.CpuUsageGauge,
 	)
 
 	return Prometheus{
