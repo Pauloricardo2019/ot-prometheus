@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/shirou/gopsutil/cpu"
 	"io/ioutil"
 	"log"
 	"math/rand"
@@ -367,21 +368,83 @@ func NewServer(logger *zap.Logger, tracer trace.Tracer) *chi.Mux {
 	return router
 }
 
+type MemoryUsage struct {
+	Alloc        uint64 // Memória alocada e ainda não liberada (bytes)
+	TotalAlloc   uint64 // Total de memória alocada (bytes)
+	Sys          uint64 // Memória obtida do sistema (bytes)
+	Mallocs      uint64 // Número de operações de alocação
+	Frees        uint64 // Número de operações de liberação
+	HeapAlloc    uint64 // Memória alocada no heap (bytes)
+	HeapSys      uint64 // Memória do sistema alocada no heap (bytes)
+	HeapIdle     uint64 // Memória no heap, mas não usada (bytes)
+	HeapInuse    uint64 // Memória alocada no heap e usada (bytes)
+	HeapReleased uint64 // Memória no heap liberada para o sistema (bytes)
+	HeapObjects  uint64 // Número de objetos alocados no heap
+}
+
+// GetMemoryUsage captura e retorna o uso de memória atual
+func getMemoryUsage() MemoryUsage {
+	var memStats runtime.MemStats
+	runtime.ReadMemStats(&memStats)
+
+	return MemoryUsage{
+		Alloc:        memStats.Alloc,
+		TotalAlloc:   memStats.TotalAlloc,
+		Sys:          memStats.Sys,
+		Mallocs:      memStats.Mallocs,
+		Frees:        memStats.Frees,
+		HeapAlloc:    memStats.HeapAlloc,
+		HeapSys:      memStats.HeapSys,
+		HeapIdle:     memStats.HeapIdle,
+		HeapInuse:    memStats.HeapInuse,
+		HeapReleased: memStats.HeapReleased,
+		HeapObjects:  memStats.HeapObjects,
+	}
+}
+
 func initMetricsCollector(appMetrics telemetry.Prometheus) {
 	go func() {
+		ticker := time.NewTicker(time.Second * 1)
 		for {
-			// Obtenha a memória alocada pelo programa
-			var m runtime.MemStats
-			runtime.ReadMemStats(&m)
-			appMetrics.MemoryUsageGauge.Set(float64(m.Sys))
+			select {
+			case <-ticker.C:
+				memoryUsage := getMemoryUsage()
+				appMetrics.MemoryUsageGauge.Set(float64(memoryUsage.Alloc))
 
-			// Obtenha a utilização atual da CPU
-			cpuUsage := getCpuUsage()
-			appMetrics.MemoryUsageGauge.Set(cpuUsage)
-
-			time.Sleep(time.Second * 5)
+				cpuTotal, cpuUsage := getCPUInfo()
+				appMetrics.CpuTotalUsageGauge.Set(float64(*cpuTotal))
+				appMetrics.CpuUsageGauge.Set(float64(*cpuUsage))
+			}
 		}
 	}()
+}
+
+func getCPUInfo() (*int, *int) {
+	// Número total de CPUs
+	numCPU, err := cpu.Counts(true)
+	if err != nil {
+		fmt.Printf("Erro ao obter o número de CPUs: %v\n", err)
+		return nil, nil
+	}
+	fmt.Printf("Número total de CPUs: %d\n", numCPU)
+
+	// Uso da CPU
+	percent, err := cpu.Percent(0, true)
+	if err != nil {
+		fmt.Printf("Erro ao obter o uso da CPU: %v\n", err)
+		return nil, nil
+	}
+
+	inUse := 0
+	for i, p := range percent {
+		fmt.Printf("Uso da CPU %d: %.2f%%\n", i, p)
+		if p > 0 {
+			inUse++
+		}
+	}
+
+	fmt.Printf("Número de CPUs em uso: %d\n", inUse)
+	return &numCPU, &inUse
 }
 
 func getCpuUsage() float64 {
