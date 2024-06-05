@@ -1,15 +1,16 @@
 package telemetryfs
 
 import (
-	"github.com/go-chi/chi/v5"
 	"net/http"
 	"strconv"
 	"time"
 
+	"ot-prometheus/telemetry"
+
+	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"ot-prometheus/telemetry"
 )
 
 func NewMetricsServer(options ...Option) (*http.Server, error) {
@@ -24,17 +25,16 @@ func NewMetricsServer(options ...Option) (*http.Server, error) {
 		promhttp.HandlerFor(prometheus.DefaultGatherer, promhttp.HandlerOpts{}),
 	))
 
-	return &http.Server{
+	server := &http.Server{
 		Handler: mux,
-		Addr:    ":1616",
-	}, nil
+		Addr:    ":9090",
+	}
+	return server, nil
 }
 
 type RedMetricsMiddleware struct {
-	// httpServerRequestDuration collects the metric for http server request duration in milliseconds.
 	httpServerRequestDuration *prometheus.HistogramVec
-	// additionalLabels contains additional labels to provide context to httpServerRequestDuration metric.
-	additionalLabels []string
+	additionalLabels          []string
 }
 
 func NewRedMetricsMiddleware(options ...Option) *RedMetricsMiddleware {
@@ -64,7 +64,7 @@ func NewRedMetricsMiddleware(options ...Option) *RedMetricsMiddleware {
 
 func (m *RedMetricsMiddleware) Handle() func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
-		fn := func(w http.ResponseWriter, r *http.Request) {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			dw := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 
 			start := time.Now()
@@ -90,9 +90,7 @@ func (m *RedMetricsMiddleware) Handle() func(next http.Handler) http.Handler {
 				labels[label] = telemetry.StatusFalse
 			}
 
-			m.httpServerRequestDuration.With(labels).Observe(time.Now().Sub(start).Seconds() * 1000)
-		}
-
-		return http.HandlerFunc(fn)
+			m.httpServerRequestDuration.With(labels).Observe(time.Since(start).Seconds() * 1000)
+		})
 	}
 }
