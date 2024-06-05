@@ -33,11 +33,11 @@ var (
 
 var (
 	memoryUsageGauge = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "app_memory_usage_bytes",
+		Name: "stone_app_memory_usage_bytes",
 		Help: "Current memory usage of the application in bytes.",
 	})
 	cpuUsageGauge = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "app_cpu_usage_percent",
+		Name: "stone_app_cpu_usage_percent",
 		Help: "Current CPU usage of the application as a percentage.",
 	})
 )

@@ -48,41 +48,55 @@ type ApiMetrics struct {
 	ActiveRequestGauge         prometheus.Gauge
 	UserStartRequestCounter    *prometheus.CounterVec
 	ProductStartRequestCounter *prometheus.CounterVec
+	MemoryUsageGauge           *prometheus.Gauge
+	CpuUsageGauge              *prometheus.Gauge
 }
 
 func NewApiMetrics() ApiMetrics {
 	return ApiMetrics{
 		RequestCounter: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "test_counter",
+			Name: "stone_test_counter",
 			Help: "Count how many report statements have been added",
 		},
 			[]string{"handler_name"},
 		),
 		CreateRequestDuration: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Name:    "response_time_seconds",
+				Name:    "stone_response_time_seconds",
 				Help:    "Histogram of response times for handler in seconds",
 				Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 30, 60, 120},
 			},
 			[]string{"handler_name", "response_time"},
 		),
 		ActiveRequestGauge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "active_requests",
+			Name: "stone_active_requests",
 			Help: "Current number of active requests being handled",
 		}),
 		UserStartRequestCounter: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "http_request_get_user_status_count", // metric name
+				Name: "stone_http_request_get_user_status_count", // metric name
 				Help: "Count of status returned by user.",
 			},
 			[]string{"user", "status"}, // labels
 		),
 		ProductStartRequestCounter: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "http_request_get_product_status_count", // metric name
+				Name: "stone_http_request_get_product_status_count", // metric name
 				Help: "Count of status returned by user.",
 			},
 			[]string{"product", "status"}, // labels
 		),
+
+		// // var (
+		// // 	memoryUsageGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+		// // 		Name: "stone_app_memory_usage_bytes",
+		// // 		Help: "Current memory usage of the application in bytes.",
+		// // 	})
+		// // 	cpuUsageGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+		// // 		Name: "stone_app_cpu_usage_percent",
+		// // 		Help: "Current CPU usage of the application as a percentage.",
+		// // 	})
+		// )
+
 	}
 }
