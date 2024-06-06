@@ -28,7 +28,7 @@ import (
 
 var (
 	BuildCommit = "undefined"
-	BuildTag    = "undefined"
+	BuildTag    = "1.0.0"
 	BuildTime   = "undefined"
 )
 
@@ -374,7 +374,7 @@ func initMetricsCollector(appMetrics telemetry.Prometheus) {
 
 			// Obtenha a utilização atual da CPU
 			cpuUsage, _ := GetCPUUsage()
-			appMetrics.MemoryUsageGauge.Set(cpuUsage)
+			appMetrics.CpuUsageGauge.Set(cpuUsage)
 
 			time.Sleep(time.Second * 5)
 		}
@@ -421,6 +421,7 @@ func GetCPUUsage() (float64, error) {
 	}
 
 	cpuUsage := 100 * (totalTicks - idleTicks) / totalTicks
+	fmt.Println("CPU USAGE: ", cpuUsage)
 	return cpuUsage, nil
 }
 

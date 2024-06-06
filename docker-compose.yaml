@@ -1,15 +1,32 @@
 version: '3'
 
 services:
-  # api:
-  #   container_name: api
-  #   build:
-  #       context: .
-  #       dockerfile: Dockerfile
-  #   ports:
-  #     - "1616:1616"
-  #     - "8989:8989"
+  tempo:
+    image: grafana/tempo
+    ports:
+      - "3100:3100"
+    environment:
+      - TEMPORARY_DISABLE_QUERY_PARANOIA=true
 
+  loki:
+    image: grafana/loki:2.4.1
+    ports:
+      - "3101:3100"  # Mudando a porta do Loki para evitar conflitos
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./loki-local-config.yaml:/etc/loki/local-config.yaml
+    user: root  # Executar como root para evitar problemas de permissão
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    command: [ "--config=/etc/otel-collector-config.yaml" ]
+    ports:
+      - "4317:4317"
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    depends_on:
+      - tempo
+      - loki
 
   prometheus:
     image: prom/prometheus
@@ -30,5 +47,3 @@ services:
       - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
-
-

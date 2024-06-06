@@ -3,9 +3,6 @@ package telemetryfs
 import (
 	"context"
 	"fmt"
-	"net/http"
-
-	"github.com/ardanlabs/conf/v3"
 	"github.com/gofrs/uuid/v5"
 	"go.opentelemetry.io/contrib/propagators/b3"
 	"go.opentelemetry.io/otel"
@@ -17,6 +14,17 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.8.0"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"net/http"
+)
+
+var tracer trace.Tracer
+
+var (
+	SERVICE_NAME           = "myapp"
+	SERVICE_NAMESPACE      = "mynamespace"
+	COLLECTOR_ENDPOINT     = "localhost:4317"
+	DEPLOYMENT_ENVIRONMENT = "production"
+	SAMPLING_RATIO         = 1.0
 )
 
 // TracerConfig represents the configuration for the tracer.
@@ -56,10 +64,11 @@ func (t Tracer) Shutdown(ctx context.Context) error {
 func NewTracer(ctx context.Context, prefix, appVersion string) (Tracer, error) {
 	var cfg TracerConfig
 
-	_, err := conf.Parse(prefix, &cfg)
-	if err != nil {
-		return Tracer{}, fmt.Errorf("parsing tracing config from prefix [%s]: %w", prefix, err)
-	}
+	cfg.ServiceName = SERVICE_NAME
+	cfg.ServiceNamespace = SERVICE_NAMESPACE
+	cfg.Endpoint = COLLECTOR_ENDPOINT
+	cfg.Environment = DEPLOYMENT_ENVIRONMENT
+	cfg.SamplingRatio = SAMPLING_RATIO
 
 	client := otlptracegrpc.NewClient(otlptracegrpc.WithEndpoint(cfg.Endpoint), otlptracegrpc.WithInsecure())
 
