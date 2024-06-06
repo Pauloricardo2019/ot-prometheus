@@ -31,10 +31,10 @@ func NewPrometheusMetrics() Prometheus {
 	apiMetrics := NewApiMetrics()
 
 	prometheus.MustRegister(
-		apiMetrics.CreateRequestDuration,
-		apiMetrics.RequestCounter,
-		apiMetrics.ActiveRequestGauge,
-		apiMetrics.UserStartRequestCounter,
+		apiMetrics.API_CreateRequestDuration,
+		apiMetrics.HTTP_RequestCounter,
+		apiMetrics.API_ActiveRequestGauge,
+		apiMetrics.HTTP_StartRequestCounter,
 		apiMetrics.MemoryUsageGauge,
 		apiMetrics.CpuUsageGauge,
 	)
@@ -45,24 +45,23 @@ func NewPrometheusMetrics() Prometheus {
 }
 
 type ApiMetrics struct {
-	RequestCounter             *prometheus.CounterVec
-	CreateRequestDuration      *prometheus.HistogramVec
-	ActiveRequestGauge         prometheus.Gauge
-	UserStartRequestCounter    *prometheus.CounterVec
-	ProductStartRequestCounter *prometheus.CounterVec
-	MemoryUsageGauge           prometheus.Gauge
-	CpuUsageGauge              prometheus.Gauge
+	HTTP_RequestCounter       *prometheus.CounterVec
+	API_CreateRequestDuration *prometheus.HistogramVec
+	API_ActiveRequestGauge    prometheus.Gauge
+	HTTP_StartRequestCounter  *prometheus.CounterVec
+	MemoryUsageGauge          prometheus.Gauge
+	CpuUsageGauge             prometheus.Gauge
 }
 
 func NewApiMetrics() ApiMetrics {
 	return ApiMetrics{
-		RequestCounter: prometheus.NewCounterVec(prometheus.CounterOpts{
+		HTTP_RequestCounter: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "stone_test_counter",
 			Help: "Count how many report statements have been added",
 		},
 			[]string{"handler_name"},
 		),
-		CreateRequestDuration: prometheus.NewHistogramVec(
+		API_CreateRequestDuration: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
 				Name:    "stone_response_time_seconds",
 				Help:    "Histogram of response times for handler in seconds",
@@ -70,24 +69,18 @@ func NewApiMetrics() ApiMetrics {
 			},
 			[]string{"handler_name", "response_time"},
 		),
-		ActiveRequestGauge: prometheus.NewGauge(prometheus.GaugeOpts{
+		API_ActiveRequestGauge: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "stone_active_requests",
 			Help: "Current number of active requests being handled",
 		}),
-		UserStartRequestCounter: prometheus.NewCounterVec(
+		HTTP_StartRequestCounter: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "stone_http_request_get_user_status_count", // metric name
 				Help: "Count of status returned by user.",
 			},
 			[]string{"user", "status"}, // labels
 		),
-		ProductStartRequestCounter: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "stone_http_request_get_product_status_count", // metric name
-				Help: "Count of status returned by user.",
-			},
-			[]string{"product", "status"}, // labels
-		),
+
 		MemoryUsageGauge: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "stone_app_memory_usage_bytes",
 			Help: "Current memory usage of the application in bytes.",

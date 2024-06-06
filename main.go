@@ -240,8 +240,7 @@ func (a *ApiRest) GetUser() http.HandlerFunc {
 
 		var status string
 		defer func() {
-
-			a.Metrics.UserStartRequestCounter.WithLabelValues("stone_balance_user_api", status).Inc()
+			a.Metrics.HTTP_StartRequestCounter.WithLabelValues("x_stone_balance_user_api", status).Inc()
 		}()
 
 		var mr User
@@ -251,8 +250,8 @@ func (a *ApiRest) GetUser() http.HandlerFunc {
 			return
 		}
 
-		a.Metrics.ActiveRequestGauge.Inc()
-		defer a.Metrics.ActiveRequestGauge.Dec()
+		a.Metrics.API_ActiveRequestGauge.Inc()
+		defer a.Metrics.API_ActiveRequestGauge.Dec()
 
 		result, err := a.Service.GetUser(r.Context(), mr.User)
 		if err != nil {
@@ -264,10 +263,10 @@ func (a *ApiRest) GetUser() http.HandlerFunc {
 		status = "2xx"
 		log.Println(result, status)
 
-		a.Metrics.RequestCounter.WithLabelValues("stone_balance_user_api_increment").Inc() // Increment the counter
+		a.Metrics.HTTP_RequestCounter.WithLabelValues("x_stone_balance_user_api_increment").Inc() // Increment the counter
 
 		duration := time.Since(start)
-		a.Metrics.CreateRequestDuration.WithLabelValues("stone_balance_user_api_duration", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
+		a.Metrics.API_CreateRequestDuration.WithLabelValues("x_stone_balance_user_api_duration", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(result))
@@ -283,7 +282,7 @@ func (a *ApiRest) GetProduct() http.HandlerFunc {
 
 		var status string
 		defer func() {
-			a.Metrics.ProductStartRequestCounter.WithLabelValues("stone_balance_product_api", status).Inc()
+			a.Metrics.HTTP_StartRequestCounter.WithLabelValues("x_stone_balance_product_api", status).Inc()
 		}()
 
 		mr := Product{}
@@ -293,8 +292,8 @@ func (a *ApiRest) GetProduct() http.HandlerFunc {
 			return
 		}
 
-		a.Metrics.ActiveRequestGauge.Inc()
-		defer a.Metrics.ActiveRequestGauge.Dec()
+		a.Metrics.API_ActiveRequestGauge.Inc()
+		defer a.Metrics.API_ActiveRequestGauge.Dec()
 
 		result, err := a.Service.GetProduct(r.Context(), mr.Product)
 		if err != nil {
@@ -306,10 +305,10 @@ func (a *ApiRest) GetProduct() http.HandlerFunc {
 		status = "2xx"
 		log.Println(result, status)
 
-		a.Metrics.RequestCounter.WithLabelValues("stone_balance_product_api_increment").Inc() // Increment the counter
+		a.Metrics.HTTP_RequestCounter.WithLabelValues("x_stone_balance_product_api_increment").Inc() // Increment the counter
 
 		duration := time.Since(start)
-		a.Metrics.CreateRequestDuration.WithLabelValues("stone_balance_product_api_duration", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
+		a.Metrics.API_CreateRequestDuration.WithLabelValues("x_stone_balance_product_api_duration", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(result))
@@ -376,7 +375,7 @@ func initMetricsCollector(appMetrics telemetry.Prometheus) {
 			cpuUsage, _ := GetCPUUsage()
 			appMetrics.CpuUsageGauge.Set(cpuUsage)
 
-			time.Sleep(time.Second * 5)
+			// time.Sleep(time.Second * 5)
 		}
 	}()
 }
