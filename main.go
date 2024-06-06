@@ -157,9 +157,6 @@ func main() {
 		return
 	}
 
-	ctx, span := tracer.OTelTracer.Start(ctx, "main")
-	span.End()
-
 	defer func() {
 		if err = tracer.Shutdown(ctx); err != nil {
 			logger.Error("error flushing tracer", zap.Error(err))
@@ -238,7 +235,9 @@ func (a *ApiRest) GetUser() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
-		_, span := a.Tracer.OTelTracer.Start(r.Context(), "Handler.GetUser")
+		ctx := r.Context()
+
+		ctx, span := a.Tracer.OTelTracer.Start(r.Context(), "Handler.GetUser")
 		defer span.End()
 
 		var status string
@@ -256,7 +255,7 @@ func (a *ApiRest) GetUser() http.HandlerFunc {
 		a.Metrics.API_ActiveRequestGauge.Inc()
 		defer a.Metrics.API_ActiveRequestGauge.Dec()
 
-		result, err := a.Service.GetUser(r.Context(), mr.User)
+		result, err := a.Service.GetUser(ctx, mr.User)
 		if err != nil {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			status = "5xx"
@@ -280,7 +279,9 @@ func (a *ApiRest) GetProduct() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
-		_, span := a.Tracer.OTelTracer.Start(r.Context(), "Handler.GetProduct")
+		ctx := r.Context()
+
+		ctx, span := a.Tracer.OTelTracer.Start(r.Context(), "Handler.GetProduct")
 		defer span.End()
 
 		var status string
@@ -298,7 +299,7 @@ func (a *ApiRest) GetProduct() http.HandlerFunc {
 		a.Metrics.API_ActiveRequestGauge.Inc()
 		defer a.Metrics.API_ActiveRequestGauge.Dec()
 
-		result, err := a.Service.GetProduct(r.Context(), mr.Product)
+		result, err := a.Service.GetProduct(ctx, mr.Product)
 		if err != nil {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			status = "5xx"
