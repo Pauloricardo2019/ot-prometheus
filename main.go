@@ -157,6 +157,9 @@ func main() {
 		return
 	}
 
+	ctx, span := tracer.OTelTracer.Start(ctx, "main")
+	span.End()
+
 	defer func() {
 		if err = tracer.Shutdown(ctx); err != nil {
 			logger.Error("error flushing tracer", zap.Error(err))
@@ -420,7 +423,6 @@ func GetCPUUsage() (float64, error) {
 	}
 
 	cpuUsage := 100 * (totalTicks - idleTicks) / totalTicks
-	fmt.Println("CPU USAGE: ", cpuUsage)
 	return cpuUsage, nil
 }
 

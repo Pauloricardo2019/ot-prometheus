@@ -22,7 +22,7 @@ var tracer trace.Tracer
 var (
 	SERVICE_NAME           = "myapp"
 	SERVICE_NAMESPACE      = "mynamespace"
-	COLLECTOR_ENDPOINT     = "localhost:4317"
+	COLLECTOR_ENDPOINT     = "172.28.0.4:4317"
 	DEPLOYMENT_ENVIRONMENT = "production"
 	SAMPLING_RATIO         = 1.0
 )

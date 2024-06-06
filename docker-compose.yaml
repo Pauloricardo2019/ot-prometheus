@@ -1,49 +1,55 @@
-version: '3'
-
+version: "3.9"
 services:
-  tempo:
-    image: grafana/tempo
-    ports:
-      - "3100:3100"
-    environment:
-      - TEMPORARY_DISABLE_QUERY_PARANOIA=true
-
-  loki:
-    image: grafana/loki:2.4.1
-    ports:
-      - "3101:3100"  # Mudando a porta do Loki para evitar conflitos
-    command: -config.file=/etc/loki/local-config.yaml
-    volumes:
-      - ./loki-local-config.yaml:/etc/loki/local-config.yaml
-    user: root  # Executar como root para evitar problemas de permissão
-
-  otel-collector:
-    image: otel/opentelemetry-collector-contrib:latest
-    command: [ "--config=/etc/otel-collector-config.yaml" ]
-    ports:
-      - "4317:4317"
-    volumes:
-      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
-    depends_on:
-      - tempo
-      - loki
-
   prometheus:
     image: prom/prometheus
-    container_name: prometheus
     ports:
       - "9090:9090"
     volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--web.enable-lifecycle'
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:cached
 
+  loki:
+    image: grafana/loki
+    command: -config.file=/etc/loki/local-config.yaml
+
+  tempo:
+    image: grafana/tempo
+    command: [ "-config.file=/etc/tempo-local.yaml" ]
+    volumes:
+      - ./tempo-local.yaml:/etc/tempo-local.yaml
+    ports:
+      - "3200:3200"   # tempo
+      - "4317:4317"  # otlp grpc
+      - "4318:4318"  # otlp http
+    user: root
+
+  tempo-query:
+    image: grafana/tempo-query
+    command: [ "--grpc-storage-plugin.configuration-file=/etc/tempo-query.yaml" ]
+    volumes:
+      - ./tempo/tempo-query.yaml:/etc/tempo-query.yaml
+    ports:
+      - "16686:16686"  # jaeger-ui
+    user: root
+    depends_on:
+      - tempo
 
   grafana:
     image: grafana/grafana
-    container_name: grafana
+    volumes:
+      - ./grafana/datasource-config/:/etc/grafana/provisioning/datasources:cached
+      - ./grafana/dashboards/prometheus.json:/var/lib/grafana/dashboards/prometheus.json:cached
+      - ./grafana/dashboards/loki.json:/var/lib/grafana/dashboards/loki.json:cached
+      - ./grafana/dashboards-config/:/etc/grafana/provisioning/dashboards:cached
     ports:
       - "3000:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+    depends_on:
+      - prometheus
+      - loki
+
+networks:
+  default:
+    driver: bridge
