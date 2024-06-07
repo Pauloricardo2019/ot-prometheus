@@ -71,7 +71,7 @@ func NewRepository(tracer trace.Tracer) *Repository {
 }
 
 func (repo *Repository) FetchUserData(ctx context.Context, userID string) (string, error) {
-	_, span := repo.Tracer.Start(ctx, "Repository.FetchUserData")
+	ctx, span := repo.Tracer.Start(ctx, "Repository.FetchUserData")
 	defer span.End()
 
 	// Simulando uma busca no banco de dados
@@ -80,7 +80,7 @@ func (repo *Repository) FetchUserData(ctx context.Context, userID string) (strin
 }
 
 func (repo *Repository) FetchProductData(ctx context.Context, productID string) (string, error) {
-	_, span := repo.Tracer.Start(ctx, "Repository.FetchProductData")
+	ctx, span := repo.Tracer.Start(ctx, "Repository.FetchProductData")
 	defer span.End()
 
 	// Simulando uma busca no banco de dados
@@ -89,7 +89,7 @@ func (repo *Repository) FetchProductData(ctx context.Context, productID string) 
 }
 
 func (s *Service) GetUser(ctx context.Context, userID string) (string, error) {
-	_, span := s.Tracer.Start(ctx, "Service.GetUser")
+	ctx, span := s.Tracer.Start(ctx, "Service.GetUser")
 	defer span.End()
 
 	userData, err := s.Repo.FetchUserData(ctx, userID)
@@ -101,7 +101,7 @@ func (s *Service) GetUser(ctx context.Context, userID string) (string, error) {
 }
 
 func (s *Service) GetProduct(ctx context.Context, productID string) (string, error) {
-	_, span := s.Tracer.Start(ctx, "Service.GetProduct")
+	ctx, span := s.Tracer.Start(ctx, "Service.GetProduct")
 	defer span.End()
 
 	productData, err := s.Repo.FetchProductData(ctx, productID)
