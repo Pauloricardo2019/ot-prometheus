@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"log"
 	"math/rand"
 	"net/http"
@@ -75,7 +77,7 @@ func (repo *Repository) FetchUserData(ctx context.Context, userID string) (strin
 	defer span.End()
 
 	// Simulando uma busca no banco de dados
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(90 * time.Millisecond)
 	return "UserData for " + userID, nil
 }
 
@@ -84,7 +86,7 @@ func (repo *Repository) FetchProductData(ctx context.Context, productID string) 
 	defer span.End()
 
 	// Simulando uma busca no banco de dados
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 	return "ProductData for " + productID, nil
 }
 
@@ -96,7 +98,7 @@ func (s *Service) GetUser(ctx context.Context, userID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-
+	time.Sleep(time.Millisecond * 198)
 	return userData, nil
 }
 
@@ -108,7 +110,7 @@ func (s *Service) GetProduct(ctx context.Context, productID string) (string, err
 	if err != nil {
 		return "", err
 	}
-
+	time.Sleep(time.Millisecond * 300)
 	return productData, nil
 }
 
@@ -234,11 +236,14 @@ func main() {
 func (a *ApiRest) GetUser() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-
 		ctx := r.Context()
 
-		ctx, span := a.Tracer.OTelTracer.Start(r.Context(), "Handler.GetUser")
+		//Feito no vídeo assim, (SEM INJEÇÃO DE DEPENDÊNCIA)
+		tracer := telemetryfs.FromContext(ctx)
+		ctx, span := tracer.Start(r.Context(), "Handler.GetUser")
 		defer span.End()
+
+		logger := telemetryfs.Logger(ctx)
 
 		var status string
 		defer func() {
@@ -247,6 +252,7 @@ func (a *ApiRest) GetUser() http.HandlerFunc {
 
 		var mr User
 		if err := json.NewDecoder(r.Body).Decode(&mr); err != nil {
+			logger.Error("error on bind json", zap.Error(err))
 			http.Error(w, "Invalid request payload", http.StatusBadRequest)
 			status = "4xx"
 			return
@@ -255,14 +261,25 @@ func (a *ApiRest) GetUser() http.HandlerFunc {
 		a.Metrics.API_ActiveRequestGauge.Inc()
 		defer a.Metrics.API_ActiveRequestGauge.Dec()
 
+		span.SetAttributes(attribute.KeyValue{Key: "User", Value: attribute.StringValue(mr.User)})
+
 		result, err := a.Service.GetUser(ctx, mr.User)
 		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			status = "5xx"
 			return
 		}
 
-		status = "2xx"
+		logger.Info("user data", zap.String("user", mr.User), zap.String("data", result))
+
+		if rand.Float32() > 0.8 {
+			status = "4xx"
+		} else {
+			status = "2xx"
+		}
+
 		log.Println(result, status)
 
 		a.Metrics.HTTP_RequestCounter.WithLabelValues("x_stone_balance_user_api_increment").Inc() // Increment the counter
@@ -306,7 +323,11 @@ func (a *ApiRest) GetProduct() http.HandlerFunc {
 			return
 		}
 
-		status = "2xx"
+		if rand.Float32() > 0.8 {
+			status = "4xx"
+		} else {
+			status = "2xx"
+		}
 		log.Println(result, status)
 
 		a.Metrics.HTTP_RequestCounter.WithLabelValues("x_stone_balance_product_api_increment").Inc() // Increment the counter
