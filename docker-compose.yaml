@@ -49,7 +49,3 @@ services:
     depends_on:
       - prometheus
       - loki
-
-networks:
-  default:
-    driver: bridge
