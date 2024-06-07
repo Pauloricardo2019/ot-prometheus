@@ -261,7 +261,7 @@ func (a *ApiRest) GetUser() http.HandlerFunc {
 		a.Metrics.API_ActiveRequestGauge.Inc()
 		defer a.Metrics.API_ActiveRequestGauge.Dec()
 
-		span.SetAttributes(attribute.KeyValue{Key: "User", Value: attribute.StringValue(mr.User)})
+		span.SetAttributes(attribute.String("user", mr.User))
 
 		result, err := a.Service.GetUser(ctx, mr.User)
 		if err != nil {
