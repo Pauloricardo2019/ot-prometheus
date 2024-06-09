@@ -242,7 +242,7 @@ func (a *ApiRest) GetUser() http.HandlerFunc {
 
 		var status string
 		defer func() {
-			a.Metrics.HTTP_StartRequestCounter.WithLabelValues("x_stone_balance_user_api", status).Inc()
+			a.Metrics.Metric_StartRequestCounter.WithLabelValues(telemetry.PREFIX_PARAM_METRIC+"user_api", status).Inc()
 		}()
 
 		var mr User
@@ -252,8 +252,8 @@ func (a *ApiRest) GetUser() http.HandlerFunc {
 			return
 		}
 
-		a.Metrics.API_ActiveRequestGauge.Inc()
-		defer a.Metrics.API_ActiveRequestGauge.Dec()
+		a.Metrics.Metric_ActiveRequestGauge.Inc()
+		defer a.Metrics.Metric_ActiveRequestGauge.Dec()
 
 		result, err := a.Service.GetUser(ctx, mr.User)
 		if err != nil {
@@ -265,10 +265,10 @@ func (a *ApiRest) GetUser() http.HandlerFunc {
 		status = "2xx"
 		log.Println(result, status)
 
-		a.Metrics.HTTP_RequestCounter.WithLabelValues("x_stone_balance_user_api_increment").Inc() // Increment the counter
+		a.Metrics.Metric_RequestCounter.WithLabelValues(telemetry.PREFIX_PARAM_METRIC + "user_api_increment").Inc() // Increment the counter
 
 		duration := time.Since(start)
-		a.Metrics.API_CreateRequestDuration.WithLabelValues("x_stone_balance_user_api_duration", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
+		a.Metrics.Metric_CreateRequestDuration.WithLabelValues(telemetry.PREFIX_PARAM_METRIC+"user_api_duration", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(result))
@@ -286,7 +286,7 @@ func (a *ApiRest) GetProduct() http.HandlerFunc {
 
 		var status string
 		defer func() {
-			a.Metrics.HTTP_StartRequestCounter.WithLabelValues("x_stone_balance_product_api", status).Inc()
+			a.Metrics.Metric_StartRequestCounter.WithLabelValues(telemetry.PREFIX_PARAM_METRIC+"product_api", status).Inc()
 		}()
 
 		mr := Product{}
@@ -296,8 +296,8 @@ func (a *ApiRest) GetProduct() http.HandlerFunc {
 			return
 		}
 
-		a.Metrics.API_ActiveRequestGauge.Inc()
-		defer a.Metrics.API_ActiveRequestGauge.Dec()
+		a.Metrics.Metric_ActiveRequestGauge.Inc()
+		defer a.Metrics.Metric_ActiveRequestGauge.Dec()
 
 		result, err := a.Service.GetProduct(ctx, mr.Product)
 		if err != nil {
@@ -309,10 +309,10 @@ func (a *ApiRest) GetProduct() http.HandlerFunc {
 		status = "2xx"
 		log.Println(result, status)
 
-		a.Metrics.HTTP_RequestCounter.WithLabelValues("x_stone_balance_product_api_increment").Inc() // Increment the counter
+		a.Metrics.Metric_RequestCounter.WithLabelValues(telemetry.PREFIX_PARAM_METRIC + "product_api_increment").Inc() // Increment the counter
 
 		duration := time.Since(start)
-		a.Metrics.API_CreateRequestDuration.WithLabelValues("x_stone_balance_product_api_duration", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
+		a.Metrics.Metric_CreateRequestDuration.WithLabelValues(telemetry.PREFIX_PARAM_METRIC+"product_api_duration", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(result))
@@ -373,11 +373,11 @@ func initMetricsCollector(appMetrics telemetry.Prometheus) {
 			var m runtime.MemStats
 			runtime.ReadMemStats(&m)
 			freeMemory, _ := GetFreeMemory()
-			appMetrics.MemoryUsageGauge.Set(freeMemory)
+			appMetrics.Metric_MemoryUsageGauge.Set(freeMemory)
 
 			// Obtenha a utilização atual da CPU
 			cpuUsage, _ := GetCPUUsage()
-			appMetrics.CpuUsageGauge.Set(cpuUsage)
+			appMetrics.Metric_CpuUsageGauge.Set(cpuUsage)
 
 			// time.Sleep(time.Second * 5)
 		}
