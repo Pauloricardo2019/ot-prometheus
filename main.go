@@ -7,8 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 	"log"
 	"math/rand"
 	"net/http"
@@ -20,6 +18,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -33,103 +34,6 @@ var (
 	BuildTag    = "1.0.0"
 	BuildTime   = "undefined"
 )
-
-type ApiRest struct {
-	Service *Service
-	Metrics telemetry.Prometheus
-	Tracer  telemetryfs.Tracer
-}
-
-func NewApiRest(service *Service, metrics telemetry.Prometheus, tracer telemetryfs.Tracer) *ApiRest {
-	return &ApiRest{
-		Service: service,
-		Metrics: metrics,
-		Tracer:  tracer,
-	}
-}
-
-type Service struct {
-	Repo    *Repository
-	Tracer  trace.Tracer
-	Metrics telemetry.Prometheus
-}
-
-func NewService(repo *Repository, tracer trace.Tracer, metrics telemetry.Prometheus) *Service {
-	return &Service{
-		Repo:    repo,
-		Tracer:  tracer,
-		Metrics: metrics,
-	}
-}
-
-type Repository struct {
-	Tracer trace.Tracer
-}
-
-func NewRepository(tracer trace.Tracer) *Repository {
-	return &Repository{
-		Tracer: tracer,
-	}
-}
-
-func (repo *Repository) FetchUserData(ctx context.Context, userID string) (string, error) {
-	ctx, span := repo.Tracer.Start(ctx, "Repository.FetchUserData")
-	defer span.End()
-
-	// Simulando uma busca no banco de dados
-	time.Sleep(90 * time.Millisecond)
-	return "UserData for " + userID, nil
-}
-
-func (repo *Repository) FetchProductData(ctx context.Context, productID string) (string, error) {
-	ctx, span := repo.Tracer.Start(ctx, "Repository.FetchProductData")
-	defer span.End()
-
-	// Simulando uma busca no banco de dados
-	time.Sleep(200 * time.Millisecond)
-	return "ProductData for " + productID, nil
-}
-
-func (s *Service) GetUser(ctx context.Context, userID string) (string, error) {
-	ctx, span := s.Tracer.Start(ctx, "Service.GetUser")
-	defer span.End()
-
-	userData, err := s.Repo.FetchUserData(ctx, userID)
-	if err != nil {
-		return "", err
-	}
-	time.Sleep(time.Millisecond * 198)
-	return userData, nil
-}
-
-func (s *Service) GetProduct(ctx context.Context, productID string) (string, error) {
-	ctx, span := s.Tracer.Start(ctx, "Service.GetProduct")
-	defer span.End()
-
-	productData, err := s.Repo.FetchProductData(ctx, productID)
-	if err != nil {
-		return "", err
-	}
-	time.Sleep(time.Millisecond * 300)
-	return productData, nil
-}
-
-func (s *Service) callExternalAPI(ctx context.Context, url string) (string, error) {
-	_, span := s.Tracer.Start(ctx, "Service.callExternalAPI")
-	defer span.End()
-
-	req, _ := http.NewRequestWithContext(ctx, "POST", url, nil)
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	buf := new(bytes.Buffer)
-	buf.ReadFrom(resp.Body)
-	return buf.String(), nil
-}
 
 func main() {
 	logger, err := telemetryfs.NewLogger()
@@ -151,9 +55,9 @@ func main() {
 
 	ctx := telemetryfs.WithLogger(context.Background(), logger)
 
-	appMetrics := telemetry.NewPrometheusMetrics()
-
+	metricas := telemetry.NewPrometheusMetrics()
 	tracer, err := telemetryfs.NewTracer(ctx, "OTEL", BuildTag)
+
 	if err != nil {
 		logger.Error("error creating the tracer", zap.Error(err))
 		return
@@ -172,13 +76,13 @@ func main() {
 		return
 	}
 
-	repo := NewRepository(tracer.OTelTracer)
-	service := NewService(repo, tracer.OTelTracer, appMetrics)
-	apiRest := NewApiRest(service, appMetrics, tracer)
+	produtorepo := NewProdutoRepository(tracer.OTelTracer)
+	produtoservice := NewProdutoService(produtorepo, tracer.OTelTracer, metricas)
+	produtoUserHandle := NewUserHandle(produtoservice, metricas, tracer)
 
 	router := NewServer(logger, tracer.OTelTracer)
-	router.Post("/user", apiRest.GetUser())
-	router.Post("/product", apiRest.GetProduct())
+	router.Post("/user", produtoUserHandle.GetUser())
+	router.Post("/product", produtoUserHandle.GetProduct())
 	router.Handle("/metrics", promhttp.Handler())
 
 	server := http.Server{
@@ -187,7 +91,7 @@ func main() {
 	}
 
 	// Iniciando a coleta de métricas de memória e CPU
-	initMetricsCollector(appMetrics)
+	initMetricsCollector(metricas)
 
 	wg := sync.WaitGroup{}
 
@@ -233,66 +137,23 @@ func main() {
 
 }
 
-func (a *ApiRest) GetUser() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		ctx := r.Context()
+// ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-		//Feito no vídeo assim, (SEM INJEÇÃO DE DEPENDÊNCIA)
-		tracer := telemetryfs.FromContext(ctx)
-		ctx, span := tracer.Start(r.Context(), "Handler.GetUser")
-		defer span.End()
+type ProdutoHandle struct {
+	Service *ProdutoService
+	Metrics telemetry.Prometheus
+	Tracer  telemetryfs.Tracer
+}
 
-		logger := telemetryfs.Logger(ctx)
-
-		var status string
-		defer func() {
-			a.Metrics.HTTP_StartRequestCounter.WithLabelValues("x_stone_balance_user_api", status).Inc()
-		}()
-
-		var mr User
-		if err := json.NewDecoder(r.Body).Decode(&mr); err != nil {
-			logger.Error("error on bind json", zap.Error(err))
-			http.Error(w, "Invalid request payload", http.StatusBadRequest)
-			status = "4xx"
-			return
-		}
-
-		a.Metrics.API_ActiveRequestGauge.Inc()
-		defer a.Metrics.API_ActiveRequestGauge.Dec()
-
-		span.SetAttributes(attribute.String("user", mr.User))
-
-		result, err := a.Service.GetUser(ctx, mr.User)
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			status = "5xx"
-			return
-		}
-
-		logger.Info("user data", zap.String("user", mr.User), zap.String("data", result))
-
-		if rand.Float32() > 0.8 {
-			status = "4xx"
-		} else {
-			status = "2xx"
-		}
-
-		log.Println(result, status)
-
-		a.Metrics.HTTP_RequestCounter.WithLabelValues("x_stone_balance_user_api_increment").Inc() // Increment the counter
-
-		duration := time.Since(start)
-		a.Metrics.API_CreateRequestDuration.WithLabelValues("x_stone_balance_user_api_duration", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
-
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(result))
+func NewProdutoHandle(service *ProdutoService, metrics telemetry.Prometheus, tracer telemetryfs.Tracer) *ProdutoHandle {
+	return &ProdutoHandle{
+		Service: service,
+		Metrics: metrics,
+		Tracer:  tracer,
 	}
 }
 
-func (a *ApiRest) GetProduct() http.HandlerFunc {
+func (a *ProdutoHandle) GetProduct() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
@@ -340,6 +201,223 @@ func (a *ApiRest) GetProduct() http.HandlerFunc {
 	}
 }
 
+// ///////////////////////////////////////////////////////////////////////////////////////////////////
+
+type UserHandle struct {
+	UserService *UserService
+	Metrics     telemetry.Prometheus
+	Tracer      telemetryfs.Tracer
+}
+
+func NewUserHandle(service *UserService, metrics telemetry.Prometheus, tracer telemetryfs.Tracer) *UserHandle {
+	return &UserHandle{
+		UserService: service,
+		Metrics:     metrics,
+		Tracer:      tracer,
+	}
+}
+
+func (a *UserHandle) GetUser() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		ctx := r.Context()
+
+		//Feito no vídeo assim, (SEM INJEÇÃO DE DEPENDÊNCIA)
+		tracer := telemetryfs.FromContext(ctx)
+		ctx, span := tracer.Start(r.Context(), "Handler.GetUser")
+		defer span.End()
+
+		logger := telemetryfs.Logger(ctx)
+
+		var status string
+		defer func() {
+			a.Metrics.HTTP_StartRequestCounter.WithLabelValues("x_stone_balance_user_api", status).Inc()
+		}()
+
+		var mr User
+		if err := json.NewDecoder(r.Body).Decode(&mr); err != nil {
+			logger.Error("error on bind json", zap.Error(err))
+			http.Error(w, "Invalid request payload", http.StatusBadRequest)
+			status = "4xx"
+			return
+		}
+
+		a.Metrics.API_ActiveRequestGauge.Inc()
+		defer a.Metrics.API_ActiveRequestGauge.Dec()
+
+		span.SetAttributes(attribute.String("user", mr.User))
+
+		result, err := a.UserService.GetUser(ctx, mr.User)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			status = strconv.Itoa(http.StatusInternalServerError)
+			return
+		}
+
+		logger.Info("user data", zap.String("user", mr.User), zap.String("data", result))
+
+		if rand.Float32() > 0.8 {
+			status = "4xx"
+		} else {
+			status = "2xx"
+		}
+
+		log.Println(result, status)
+
+		a.Metrics.HTTP_RequestCounter.WithLabelValues("x_stone_balance_user_api_increment").Inc() // Increment the counter
+
+		duration := time.Since(start)
+		a.Metrics.API_CreateRequestDuration.WithLabelValues("x_stone_balance_user_api_duration", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(result))
+	}
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////
+
+type ProdutoService struct {
+	ProdutoRepo *ProdutoRepository
+	Tracer      trace.Tracer
+	Metrics     telemetry.Prometheus
+}
+
+func NewProdutoService(repo *ProdutoRepository, tracer trace.Tracer, metrics telemetry.Prometheus) *ProdutoService {
+	return &ProdutoService{
+		ProdutoRepo: repo,
+		Tracer:      tracer,
+		Metrics:     metrics,
+	}
+}
+
+func (s *ProdutoService) GetProduct(ctx context.Context, productID string) (string, error) {
+	ctx, span := s.Tracer.Start(ctx, "Service.GetProduct")
+	defer span.End()
+
+	productData, err := s.ProdutoRepo.FetchProductData(ctx, productID)
+	if err != nil {
+		return "", err
+	}
+	time.Sleep(time.Millisecond * 300)
+	return productData, nil
+}
+
+func (s *ProdutoService) callExternalAPI(ctx context.Context, url string) (string, error) {
+	_, span := s.Tracer.Start(ctx, "Service.callExternalAPI")
+	defer span.End()
+
+	req, _ := http.NewRequestWithContext(ctx, "POST", url, nil)
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	buf := new(bytes.Buffer)
+	buf.ReadFrom(resp.Body)
+	return buf.String(), nil
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////
+
+type UserService struct {
+	UserRepo *UserRepository
+	Tracer   trace.Tracer
+	Metrics  telemetry.Prometheus
+}
+
+func NewUserService(repo *UserRepository, tracer trace.Tracer, metrics telemetry.Prometheus) *UserService {
+	return &UserService{
+		UserRepo: repo,
+		Tracer:   tracer,
+		Metrics:  metrics,
+	}
+}
+
+func (s *UserService) GetUser(ctx context.Context, userID string) (string, error) {
+	ctx, span := s.Tracer.Start(ctx, "Service.GetUser")
+	defer span.End()
+
+	userData, err := s.UserRepo.FetchUserData(ctx, userID)
+	if err != nil {
+		return "", err
+	}
+	time.Sleep(time.Millisecond * 198)
+	return userData, nil
+}
+
+func (s *UserService) callExternalAPI(ctx context.Context, url string) (string, error) {
+	_, span := s.Tracer.Start(ctx, "Service.callExternalAPI")
+	defer span.End()
+
+	req, _ := http.NewRequestWithContext(ctx, "POST", url, nil)
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	buf := new(bytes.Buffer)
+	buf.ReadFrom(resp.Body)
+	return buf.String(), nil
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////
+
+type ProdutoRepository struct {
+	Tracer trace.Tracer
+}
+
+func NewProdutoRepository(tracer trace.Tracer) *ProdutoRepository {
+	return &ProdutoRepository{
+		Tracer: tracer,
+	}
+}
+
+func (repo *ProdutoRepository) FetchUserData(ctx context.Context, userID string) (string, error) {
+	ctx, span := repo.Tracer.Start(ctx, "Repository.FetchUserData")
+	defer span.End()
+
+	// Simulando uma busca no banco de dados
+	time.Sleep(90 * time.Millisecond)
+	return "UserData for " + userID, nil
+}
+
+func (repo *ProdutoRepository) FetchProductData(ctx context.Context, productID string) (string, error) {
+	ctx, span := repo.Tracer.Start(ctx, "Repository.FetchProductData")
+	defer span.End()
+
+	// Simulando uma busca no banco de dados
+	time.Sleep(200 * time.Millisecond)
+	return "ProductData for " + productID, nil
+}
+
+// --------------
+type UserRepository struct {
+	Tracer trace.Tracer
+}
+
+func NewUserRepository(tracer trace.Tracer) *UserRepository {
+	return &UserRepository{
+		Tracer: tracer,
+	}
+}
+
+func (repo *UserRepository) FetchUserData(ctx context.Context, userID string) (string, error) {
+	ctx, span := repo.Tracer.Start(ctx, "UserRepository.FetchUserData")
+	defer span.End()
+
+	// Simulando uma busca no banco de dados
+	time.Sleep(150 * time.Millisecond)
+	return "UserData for " + userID, nil
+}
+
+// ///////////////////////////////////////////////////////////////////////////////////////////////////
+
 type User struct {
 	User string `json:"user"`
 }
@@ -347,6 +425,8 @@ type User struct {
 type Product struct {
 	Product string `json:"product"`
 }
+
+// ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 func producerUser() {
 	userPool := []string{"bob", "alice", "jack", "mike", "tiger", "panda", "dog"}
@@ -375,6 +455,7 @@ func producerProduct() {
 	}
 }
 
+// ///////////////////////////////////////////////////////////////////////////////////////////////////
 func NewServer(logger *zap.Logger, tracer trace.Tracer) *chi.Mux {
 	redMetricsMiddleware := telemetryfs.NewRedMetricsMiddleware()
 	router := chi.NewRouter()
@@ -387,6 +468,7 @@ func NewServer(logger *zap.Logger, tracer trace.Tracer) *chi.Mux {
 	return router
 }
 
+// ///////////////////////////////////////////////////////////////////////////////////////////////////
 func initMetricsCollector(appMetrics telemetry.Prometheus) {
 	go func() {
 		for {
