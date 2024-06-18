@@ -2,15 +2,15 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
-	"math/rand"
 	"net/http"
 	"os"
+	"ot-prometheus/handler"
+	"ot-prometheus/producer"
+	"ot-prometheus/repository"
+	"ot-prometheus/service"
 	"ot-prometheus/telemetry"
 	"ot-prometheus/telemetryfs"
 	"runtime"
@@ -18,9 +18,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/codes"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -76,13 +73,19 @@ func main() {
 		return
 	}
 
-	produtorepo := NewProdutoRepository(tracer.OTelTracer)
-	produtoservice := NewProdutoService(produtorepo, tracer.OTelTracer, metricas)
-	produtoUserHandle := NewUserHandle(produtoservice, metricas, tracer)
+	produtorepo := repository.NewProdutoRepository(tracer.OTelTracer)
+	produtoservice := service.NewProdutoService(produtorepo, tracer.OTelTracer, metricas)
+	produtoHandle := handler.NewProdutoHandle(produtoservice, metricas, tracer)
+
+	userrepo := repository.NewUserRepository(tracer.OTelTracer)
+	userservice := service.NewUserService(userrepo, tracer.OTelTracer, metricas)
+	userHandle := handler.NewUserHandle(userservice, metricas, tracer)
 
 	router := NewServer(logger, tracer.OTelTracer)
-	router.Post("/user", produtoUserHandle.GetUser())
-	router.Post("/product", produtoUserHandle.GetProduct())
+
+	router.Post("/user", userHandle.GetUser())
+	router.Post("/product", produtoHandle.GetProduct())
+
 	router.Handle("/metrics", promhttp.Handler())
 
 	server := http.Server{
@@ -124,335 +127,17 @@ func main() {
 	wg.Add(1)
 	go func() {
 		time.Sleep(time.Second)
-		producerProduct()
+		producer.ProducerProduct()
 	}()
 
 	wg.Add(1)
 	go func() {
 		time.Sleep(time.Second)
-		producerUser()
+		producer.ProducerUser()
 	}()
 
 	wg.Wait()
 
-}
-
-// ///////////////////////////////////////////////////////////////////////////////////////////////////
-
-type ProdutoHandle struct {
-	Service *ProdutoService
-	Metrics telemetry.Prometheus
-	Tracer  telemetryfs.Tracer
-}
-
-func NewProdutoHandle(service *ProdutoService, metrics telemetry.Prometheus, tracer telemetryfs.Tracer) *ProdutoHandle {
-	return &ProdutoHandle{
-		Service: service,
-		Metrics: metrics,
-		Tracer:  tracer,
-	}
-}
-
-func (a *ProdutoHandle) GetProduct() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-
-		ctx := r.Context()
-
-		ctx, span := a.Tracer.OTelTracer.Start(r.Context(), "Handler.GetProduct")
-		defer span.End()
-
-		var status string
-		defer func() {
-			a.Metrics.HTTP_StartRequestCounter.WithLabelValues("x_stone_balance_product_api", status).Inc()
-		}()
-
-		mr := Product{}
-		if err := json.NewDecoder(r.Body).Decode(&mr); err != nil {
-			http.Error(w, "Invalid request payload", http.StatusBadRequest)
-			status = "4xx"
-			return
-		}
-
-		a.Metrics.API_ActiveRequestGauge.Inc()
-		defer a.Metrics.API_ActiveRequestGauge.Dec()
-
-		result, err := a.Service.GetProduct(ctx, mr.Product)
-		if err != nil {
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			status = "5xx"
-			return
-		}
-
-		if rand.Float32() > 0.8 {
-			status = "4xx"
-		} else {
-			status = "2xx"
-		}
-		log.Println(result, status)
-
-		a.Metrics.HTTP_RequestCounter.WithLabelValues("x_stone_balance_product_api_increment").Inc() // Increment the counter
-
-		duration := time.Since(start)
-		a.Metrics.API_CreateRequestDuration.WithLabelValues("x_stone_balance_product_api_duration", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
-
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(result))
-	}
-}
-
-// ///////////////////////////////////////////////////////////////////////////////////////////////////
-
-type UserHandle struct {
-	UserService *UserService
-	Metrics     telemetry.Prometheus
-	Tracer      telemetryfs.Tracer
-}
-
-func NewUserHandle(service *UserService, metrics telemetry.Prometheus, tracer telemetryfs.Tracer) *UserHandle {
-	return &UserHandle{
-		UserService: service,
-		Metrics:     metrics,
-		Tracer:      tracer,
-	}
-}
-
-func (a *UserHandle) GetUser() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		ctx := r.Context()
-
-		//Feito no vídeo assim, (SEM INJEÇÃO DE DEPENDÊNCIA)
-		tracer := telemetryfs.FromContext(ctx)
-		ctx, span := tracer.Start(r.Context(), "Handler.GetUser")
-		defer span.End()
-
-		logger := telemetryfs.Logger(ctx)
-
-		var status string
-		defer func() {
-			a.Metrics.HTTP_StartRequestCounter.WithLabelValues("x_stone_balance_user_api", status).Inc()
-		}()
-
-		var mr User
-		if err := json.NewDecoder(r.Body).Decode(&mr); err != nil {
-			logger.Error("error on bind json", zap.Error(err))
-			http.Error(w, "Invalid request payload", http.StatusBadRequest)
-			status = "4xx"
-			return
-		}
-
-		a.Metrics.API_ActiveRequestGauge.Inc()
-		defer a.Metrics.API_ActiveRequestGauge.Dec()
-
-		span.SetAttributes(attribute.String("user", mr.User))
-
-		result, err := a.UserService.GetUser(ctx, mr.User)
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, err.Error())
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			status = strconv.Itoa(http.StatusInternalServerError)
-			return
-		}
-
-		logger.Info("user data", zap.String("user", mr.User), zap.String("data", result))
-
-		if rand.Float32() > 0.8 {
-			status = "4xx"
-		} else {
-			status = "2xx"
-		}
-
-		log.Println(result, status)
-
-		a.Metrics.HTTP_RequestCounter.WithLabelValues("x_stone_balance_user_api_increment").Inc() // Increment the counter
-
-		duration := time.Since(start)
-		a.Metrics.API_CreateRequestDuration.WithLabelValues("x_stone_balance_user_api_duration", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
-
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(result))
-	}
-}
-
-////////////////////////////////////////////////////////////////////////////////////////////////
-
-type ProdutoService struct {
-	ProdutoRepo *ProdutoRepository
-	Tracer      trace.Tracer
-	Metrics     telemetry.Prometheus
-}
-
-func NewProdutoService(repo *ProdutoRepository, tracer trace.Tracer, metrics telemetry.Prometheus) *ProdutoService {
-	return &ProdutoService{
-		ProdutoRepo: repo,
-		Tracer:      tracer,
-		Metrics:     metrics,
-	}
-}
-
-func (s *ProdutoService) GetProduct(ctx context.Context, productID string) (string, error) {
-	ctx, span := s.Tracer.Start(ctx, "Service.GetProduct")
-	defer span.End()
-
-	productData, err := s.ProdutoRepo.FetchProductData(ctx, productID)
-	if err != nil {
-		return "", err
-	}
-	time.Sleep(time.Millisecond * 300)
-	return productData, nil
-}
-
-func (s *ProdutoService) callExternalAPI(ctx context.Context, url string) (string, error) {
-	_, span := s.Tracer.Start(ctx, "Service.callExternalAPI")
-	defer span.End()
-
-	req, _ := http.NewRequestWithContext(ctx, "POST", url, nil)
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	buf := new(bytes.Buffer)
-	buf.ReadFrom(resp.Body)
-	return buf.String(), nil
-}
-
-/////////////////////////////////////////////////////////////////////////////////////////////////////
-
-type UserService struct {
-	UserRepo *UserRepository
-	Tracer   trace.Tracer
-	Metrics  telemetry.Prometheus
-}
-
-func NewUserService(repo *UserRepository, tracer trace.Tracer, metrics telemetry.Prometheus) *UserService {
-	return &UserService{
-		UserRepo: repo,
-		Tracer:   tracer,
-		Metrics:  metrics,
-	}
-}
-
-func (s *UserService) GetUser(ctx context.Context, userID string) (string, error) {
-	ctx, span := s.Tracer.Start(ctx, "Service.GetUser")
-	defer span.End()
-
-	userData, err := s.UserRepo.FetchUserData(ctx, userID)
-	if err != nil {
-		return "", err
-	}
-	time.Sleep(time.Millisecond * 198)
-	return userData, nil
-}
-
-func (s *UserService) callExternalAPI(ctx context.Context, url string) (string, error) {
-	_, span := s.Tracer.Start(ctx, "Service.callExternalAPI")
-	defer span.End()
-
-	req, _ := http.NewRequestWithContext(ctx, "POST", url, nil)
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	buf := new(bytes.Buffer)
-	buf.ReadFrom(resp.Body)
-	return buf.String(), nil
-}
-
-/////////////////////////////////////////////////////////////////////////////////////////////////////
-
-type ProdutoRepository struct {
-	Tracer trace.Tracer
-}
-
-func NewProdutoRepository(tracer trace.Tracer) *ProdutoRepository {
-	return &ProdutoRepository{
-		Tracer: tracer,
-	}
-}
-
-func (repo *ProdutoRepository) FetchUserData(ctx context.Context, userID string) (string, error) {
-	ctx, span := repo.Tracer.Start(ctx, "Repository.FetchUserData")
-	defer span.End()
-
-	// Simulando uma busca no banco de dados
-	time.Sleep(90 * time.Millisecond)
-	return "UserData for " + userID, nil
-}
-
-func (repo *ProdutoRepository) FetchProductData(ctx context.Context, productID string) (string, error) {
-	ctx, span := repo.Tracer.Start(ctx, "Repository.FetchProductData")
-	defer span.End()
-
-	// Simulando uma busca no banco de dados
-	time.Sleep(200 * time.Millisecond)
-	return "ProductData for " + productID, nil
-}
-
-// --------------
-type UserRepository struct {
-	Tracer trace.Tracer
-}
-
-func NewUserRepository(tracer trace.Tracer) *UserRepository {
-	return &UserRepository{
-		Tracer: tracer,
-	}
-}
-
-func (repo *UserRepository) FetchUserData(ctx context.Context, userID string) (string, error) {
-	ctx, span := repo.Tracer.Start(ctx, "UserRepository.FetchUserData")
-	defer span.End()
-
-	// Simulando uma busca no banco de dados
-	time.Sleep(150 * time.Millisecond)
-	return "UserData for " + userID, nil
-}
-
-// ///////////////////////////////////////////////////////////////////////////////////////////////////
-
-type User struct {
-	User string `json:"user"`
-}
-
-type Product struct {
-	Product string `json:"product"`
-}
-
-// ///////////////////////////////////////////////////////////////////////////////////////////////////
-
-func producerUser() {
-	userPool := []string{"bob", "alice", "jack", "mike", "tiger", "panda", "dog"}
-	for {
-		postBody, _ := json.Marshal(User{
-			User: userPool[rand.Intn(len(userPool))],
-		})
-		requestBody := bytes.NewBuffer(postBody)
-		http.Post("http://0.0.0.0:8989/user", "application/json", requestBody)
-		time.Sleep(time.Second * 2)
-	}
-}
-
-func producerProduct() {
-	productPool := []string{"camiseta", "blusa", "calça", "jaqueta", "camisa"}
-	for {
-		postBody, _ := json.Marshal(Product{
-			Product: productPool[rand.Intn(len(productPool))],
-		})
-		requestBody := bytes.NewBuffer(postBody)
-		_, err := http.Post("http://0.0.0.0:8989/product", "application/json", requestBody)
-		if err != nil {
-			fmt.Println("error on send post product", err)
-		}
-		time.Sleep(time.Second * 2)
-	}
 }
 
 // ///////////////////////////////////////////////////////////////////////////////////////////////////
