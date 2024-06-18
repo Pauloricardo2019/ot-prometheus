@@ -7,8 +7,8 @@ import (
 
 	"ot-prometheus/telemetry"
 
+	"github.com/go-chi/chi/middleware"
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -49,7 +49,7 @@ func NewRedMetricsMiddleware(options ...Option) *RedMetricsMiddleware {
 		additionalLabels: opts.additionalLabels,
 		httpServerRequestDuration: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Name:    "stone_http_server_request_duration_ms",
+				Name:    "http_server_request_duration_ms",
 				Help:    "Request duration histogram for HTTP server in milliseconds",
 				Buckets: []float64{1, 5, 10, 25, 50, 100, 300, 500, 1000, 5000, 10000},
 			},

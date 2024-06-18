@@ -5,21 +5,13 @@ import (
 )
 
 const (
-	// StatusOK is a label for successful metrics in Prometheus.
-	StatusOK = "ok"
-	// StatusError is a label for error-related metrics in Prometheus.
-	StatusError = "error"
-	// StatusHit is label for hit cache metrics in Prometheus.
-	StatusHit = "hit"
-	// StatusMiss is a label for miss cache metrics in Prometheus.
-	StatusMiss = "miss"
-	// StatusTrue is a label for the presence of a value.
-	StatusTrue = "true"
-	// StatusFalse is a label for the absence of a value.
-	StatusFalse = "false"
-	// StatusSuccess is a label for successful metrics in Prometheus.
+	StatusOK      = "ok"
+	StatusError   = "error"
+	StatusHit     = "hit"
+	StatusMiss    = "miss"
+	StatusTrue    = "true"
+	StatusFalse   = "false"
 	StatusSuccess = "success"
-	// StatusFailure is a label for failure metrics in Prometheus.
 	StatusFailure = "failure"
 )
 
@@ -36,7 +28,9 @@ func NewPrometheusMetrics() Prometheus {
 		apiMetrics.API_ActiveRequestGauge,
 		apiMetrics.HTTP_StartRequestCounter,
 		apiMetrics.MemoryUsageGauge,
-		apiMetrics.CpuUsageGauge,
+		apiMetrics.MemoryAllocGauge,
+		apiMetrics.MemorySysGauge,
+		apiMetrics.CPUUsageGauge,
 	)
 
 	return Prometheus{
@@ -50,43 +44,53 @@ type ApiMetrics struct {
 	API_ActiveRequestGauge    prometheus.Gauge
 	HTTP_StartRequestCounter  *prometheus.CounterVec
 	MemoryUsageGauge          prometheus.Gauge
-	CpuUsageGauge             prometheus.Gauge
+	MemoryAllocGauge          prometheus.Gauge
+	MemorySysGauge            prometheus.Gauge
+	CPUUsageGauge             prometheus.Gauge
 }
 
 func NewApiMetrics() ApiMetrics {
 	return ApiMetrics{
 		HTTP_RequestCounter: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "stone_test_counter",
+			Name: "http_request_counter",
 			Help: "Count how many report statements have been added",
 		},
 			[]string{"handler_name"},
 		),
 		API_CreateRequestDuration: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Name:    "stone_response_time_seconds",
+				Name:    "response_time_seconds",
 				Help:    "Histogram of response times for handler in seconds",
 				Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 30, 60, 120},
 			},
 			[]string{"handler_name", "response_time"},
 		),
 		API_ActiveRequestGauge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "stone_active_requests",
+			Name: "active_requests",
 			Help: "Current number of active requests being handled",
 		}),
 		HTTP_StartRequestCounter: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "stone_http_request_get_user_status_count", // metric name
+				Name: "http_request_status_count", // metric name
 				Help: "Count of status returned by user.",
 			},
 			[]string{"user", "status"}, // labels
 		),
 
 		MemoryUsageGauge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "stone_app_memory_usage_bytes",
+			Name: "app_memory_usage_bytes",
 			Help: "Current memory usage of the application in bytes.",
 		}),
-		CpuUsageGauge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "stone_app_cpu_usage_percent",
+		MemoryAllocGauge: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "app_memory_alloc_bytes",
+			Help: "Current memory allocated by the application in bytes.",
+		}),
+		MemorySysGauge: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "app_memory_sys_bytes",
+			Help: "Current memory usage by the system in bytes.",
+		}),
+		CPUUsageGauge: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "app_cpu_usage_percent",
 			Help: "Current CPU usage of the application as a percentage.",
 		}),
 	}

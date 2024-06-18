@@ -1,29 +1,28 @@
 package main
 
 import (
-	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
+	"math/rand"
 	"net/http"
-	"os"
-	"ot-prometheus/handler"
-	"ot-prometheus/producer"
-	"ot-prometheus/repository"
-	"ot-prometheus/service"
-	"ot-prometheus/telemetry"
-	"ot-prometheus/telemetryfs"
 	"runtime"
 	"strconv"
-	"strings"
-	"sync"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
-	"golang.org/x/sys/unix"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	"ot-prometheus/telemetry"
+	"ot-prometheus/telemetryfs"
 )
 
 var (
@@ -52,9 +51,8 @@ func main() {
 
 	ctx := telemetryfs.WithLogger(context.Background(), logger)
 
-	metricas := telemetry.NewPrometheusMetrics()
+	metrics := telemetry.NewPrometheusMetrics()
 	tracer, err := telemetryfs.NewTracer(ctx, "OTEL", BuildTag)
-
 	if err != nil {
 		logger.Error("error creating the tracer", zap.Error(err))
 		return
@@ -67,25 +65,20 @@ func main() {
 	}()
 
 	ctx = telemetryfs.WithTracer(ctx, tracer.OTelTracer)
-	metricsServer, err := telemetryfs.NewMetricsServer()
-	if err != nil {
-		logger.Error("creating metrics server", zap.Error(err))
-		return
-	}
 
-	produtorepo := repository.NewProdutoRepository(tracer.OTelTracer)
-	produtoservice := service.NewProdutoService(produtorepo, tracer.OTelTracer, metricas)
-	produtoHandle := handler.NewProdutoHandle(produtoservice, metricas, tracer)
+	productRepo := NewProdutoRepository(tracer.OTelTracer)
+	productService := NewProdutoService(productRepo, tracer.OTelTracer, metrics)
+	productHandle := NewProdutoHandle(productService, metrics, tracer.OTelTracer)
 
-	userrepo := repository.NewUserRepository(tracer.OTelTracer)
-	userservice := service.NewUserService(userrepo, tracer.OTelTracer, metricas)
-	userHandle := handler.NewUserHandle(userservice, metricas, tracer)
+	userRepo := NewUserRepository(tracer.OTelTracer)
+	userService := NewUserService(userRepo, tracer.OTelTracer, metrics)
+	userHandle := NewUserHandle(userService, metrics, tracer.OTelTracer)
 
 	router := NewServer(logger, tracer.OTelTracer)
-
+	router.Use(ZapMiddleware(logger))
+	router.Use(TracerMiddleware(tracer.OTelTracer))
 	router.Post("/user", userHandle.GetUser())
-	router.Post("/product", produtoHandle.GetProduct())
-
+	router.Post("/product", productHandle.GetProduct())
 	router.Handle("/metrics", promhttp.Handler())
 
 	server := http.Server{
@@ -93,15 +86,9 @@ func main() {
 		Handler: router,
 	}
 
-	// Iniciando a coleta de métricas de memória e CPU
-	initMetricsCollector(metricas)
+	initMetricsCollector(metrics)
 
-	wg := sync.WaitGroup{}
-
-	wg.Add(1)
 	go func() {
-		defer wg.Done()
-
 		logger.Info("server started",
 			zap.String("address", server.Addr),
 		)
@@ -111,148 +98,324 @@ func main() {
 		}
 	}()
 
-	wg.Add(1)
 	go func() {
-		defer wg.Done()
-
 		logger.Info("metrics server started",
-			zap.String("address", metricsServer.Addr),
+			zap.String("address", ":8080"),
 		)
+
+		metricsServer := &http.Server{
+			Addr:    ":8080",
+			Handler: promhttp.Handler(),
+		}
 
 		if err := metricsServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Error("failed to listen and serve metric server", zap.Error(err))
 		}
 	}()
 
-	wg.Add(1)
-	go func() {
-		time.Sleep(time.Second)
-		producer.ProducerProduct()
-	}()
-
-	wg.Add(1)
-	go func() {
-		time.Sleep(time.Second)
-		producer.ProducerUser()
-	}()
-
-	wg.Wait()
-
+	select {}
 }
 
-// ///////////////////////////////////////////////////////////////////////////////////////////////////
-func NewServer(logger *zap.Logger, tracer trace.Tracer) *chi.Mux {
-	redMetricsMiddleware := telemetryfs.NewRedMetricsMiddleware()
-	router := chi.NewRouter()
-	router.Use(
-		telemetryfs.LoggerToContextMiddleware(logger),
-		telemetryfs.TracerToContextMiddleware(tracer),
-		redMetricsMiddleware.Handle(),
+type ProdutoHandle struct {
+	Service *ProdutoService
+	Metrics telemetry.Prometheus
+	Tracer  trace.Tracer
+}
+
+func NewProdutoHandle(service *ProdutoService, metrics telemetry.Prometheus, tracer trace.Tracer) *ProdutoHandle {
+	return &ProdutoHandle{
+		Service: service,
+		Metrics: metrics,
+		Tracer:  tracer,
+	}
+}
+
+func (h *ProdutoHandle) GetProduct() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
+		ctx := r.Context()
+		ctx, span := h.Tracer.Start(r.Context(), "Handler.GetProduct")
+		defer span.End()
+
+		var status string
+		defer func() {
+			h.Metrics.HTTP_StartRequestCounter.WithLabelValues("x_stone_balance_product_api", status).Inc()
+		}()
+
+		mr := Product{}
+		if err := json.NewDecoder(r.Body).Decode(&mr); err != nil {
+			http.Error(w, "Invalid request payload", http.StatusBadRequest)
+			status = "4xx"
+			return
+		}
+
+		h.Metrics.API_ActiveRequestGauge.Inc()
+		defer h.Metrics.API_ActiveRequestGauge.Dec()
+
+		result, err := h.Service.GetProduct(ctx, mr.Product)
+		if err != nil {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			status = "5xx"
+			return
+		}
+
+		if rand.Float32() > 0.8 {
+			status = "4xx"
+		} else {
+			status = "2xx"
+		}
+		log.Println(result, status)
+
+		h.Metrics.HTTP_RequestCounter.WithLabelValues("x_stone_balance_product_api_increment").Inc()
+
+		duration := time.Since(start)
+		h.Metrics.API_CreateRequestDuration.WithLabelValues("x_stone_balance_product_api_duration", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(result))
+	}
+}
+
+type UserHandle struct {
+	Service *UserService
+	Metrics telemetry.Prometheus
+	Tracer  trace.Tracer
+}
+
+func NewUserHandle(service *UserService, metrics telemetry.Prometheus, tracer trace.Tracer) *UserHandle {
+	return &UserHandle{
+		Service: service,
+		Metrics: metrics,
+		Tracer:  tracer,
+	}
+}
+
+func (h *UserHandle) GetUser() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		ctx := r.Context()
+		ctx, span := h.Tracer.Start(ctx, "Handler.GetUser")
+		defer span.End()
+
+		logger := telemetryfs.Logger(ctx)
+
+		var status string
+		defer func() {
+			h.Metrics.HTTP_StartRequestCounter.WithLabelValues("x_stone_balance_user_api", status).Inc()
+		}()
+
+		var mr User
+		if err := json.NewDecoder(r.Body).Decode(&mr); err != nil {
+			logger.Error("error on bind json", zap.Error(err))
+			http.Error(w, "Invalid request payload", http.StatusBadRequest)
+			status = "4xx"
+			return
+		}
+
+		h.Metrics.API_ActiveRequestGauge.Inc()
+		defer h.Metrics.API_ActiveRequestGauge.Dec()
+
+		span.SetAttributes(attribute.String("user", mr.User))
+
+		result, err := h.Service.GetUser(ctx, mr.User)
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			status = strconv.Itoa(http.StatusInternalServerError)
+			return
+		}
+
+		logger.Info("user data", zap.String("user", mr.User), zap.String("data", result))
+
+		if rand.Float32() > 0.8 {
+			status = "4xx"
+		} else {
+			status = "2xx"
+		}
+
+		log.Println(result, status)
+
+		h.Metrics.HTTP_RequestCounter.WithLabelValues("x_stone_balance_user_api_increment").Inc()
+
+		duration := time.Since(start)
+		h.Metrics.API_CreateRequestDuration.WithLabelValues("x_stone_balance_user_api_duration", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(result))
+	}
+}
+
+type ProdutoService struct {
+	Repository *ProdutoRepository
+	Tracer     trace.Tracer
+	Metrics    telemetry.Prometheus
+}
+
+func NewProdutoService(repo *ProdutoRepository, tracer trace.Tracer, metrics telemetry.Prometheus) *ProdutoService {
+	return &ProdutoService{
+		Repository: repo,
+		Tracer:     tracer,
+		Metrics:    metrics,
+	}
+}
+
+func (s *ProdutoService) GetProduct(ctx context.Context, product string) (string, error) {
+	ctx, span := s.Tracer.Start(ctx, "Service.GetProduct")
+	defer span.End()
+
+	s.Metrics.API_ActiveRequestGauge.Inc()
+	defer s.Metrics.API_ActiveRequestGauge.Dec()
+
+	productData, err := s.Repository.FetchProductData(ctx, product)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return "", err
+	}
+
+	return productData, nil
+}
+
+type UserService struct {
+	UserRepo *UserRepository
+	Tracer   trace.Tracer
+	Metrics  telemetry.Prometheus
+}
+
+func NewUserService(repo *UserRepository, tracer trace.Tracer, metrics telemetry.Prometheus) *UserService {
+	return &UserService{
+		UserRepo: repo,
+		Tracer:   tracer,
+		Metrics:  metrics,
+	}
+}
+
+func (s *UserService) GetUser(ctx context.Context, userID string) (string, error) {
+	ctx, span := s.Tracer.Start(ctx, "Service.GetUser")
+	defer span.End()
+
+	s.Metrics.API_ActiveRequestGauge.Inc()
+	defer s.Metrics.API_ActiveRequestGauge.Dec()
+
+	userData, err := s.UserRepo.FetchUserData(ctx, userID)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return "", err
+	}
+
+	return userData, nil
+}
+
+type ProdutoRepository struct {
+	Tracer trace.Tracer
+}
+
+func NewProdutoRepository(tracer trace.Tracer) *ProdutoRepository {
+	return &ProdutoRepository{
+		Tracer: tracer,
+	}
+}
+
+func (r *ProdutoRepository) FetchProductData(ctx context.Context, productID string) (string, error) {
+	// Simulating fetching product data from a database or external service
+	// Here you can add your implementation to fetch real product data
+	time.Sleep(time.Duration(rand.Intn(100)) * time.Millisecond)
+	return fmt.Sprintf("Product data for ID: %s", productID), nil
+}
+
+type UserRepository struct {
+	Tracer trace.Tracer
+}
+
+func NewUserRepository(tracer trace.Tracer) *UserRepository {
+	return &UserRepository{
+		Tracer: tracer,
+	}
+}
+
+func (r *UserRepository) FetchUserData(ctx context.Context, userID string) (string, error) {
+	// Simulating fetching user data from a database or external service
+	// Here you can add your implementation to fetch real user data
+	time.Sleep(time.Duration(rand.Intn(100)) * time.Millisecond)
+	return fmt.Sprintf("User data for ID: %s", userID), nil
+}
+
+func NewServer(logger *zap.Logger, otTracer trace.Tracer) chi.Router {
+	r := chi.NewRouter()
+
+	r.Use(ZapMiddleware(logger))
+	r.Use(TracerMiddleware(otTracer))
+
+	return r
+}
+
+func ZapMiddleware(logger *zap.Logger) func(next http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
+			ctx = telemetryfs.WithLogger(ctx, logger)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+func TracerMiddleware(otTracer trace.Tracer) func(next http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
+			ctx = telemetryfs.WithTracer(ctx, otTracer)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+func initMetricsCollector(metrics telemetry.Prometheus) {
+	metrics.HTTP_RequestCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "http_request_total",
+			Help: "Total number of HTTP requests made.",
+		},
+		[]string{"handler", "status"},
 	)
+	prometheus.MustRegister(metrics.HTTP_RequestCounter)
 
-	return router
+	metrics.HTTP_StartRequestCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "http_start_request_total",
+			Help: "Total number of HTTP start requests made.",
+		},
+		[]string{"handler", "status"},
+	)
+	prometheus.MustRegister(metrics.HTTP_StartRequestCounter)
+
+	metrics.API_ActiveRequestGauge = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "api_active_requests",
+			Help: "Number of active API requests.",
+		},
+	)
+	prometheus.MustRegister(metrics.API_ActiveRequestGauge)
+
+	metrics.API_CreateRequestDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name: "api_request_duration_seconds",
+			Help: "Duration of API requests in seconds.",
+			Buckets: []float64{
+				0.1, 0.3, 1.2, 5.0,
+			},
+		},
+		[]string{"handler", "duration"},
+	)
+	prometheus.MustRegister(metrics.API_CreateRequestDuration)
 }
 
-// ///////////////////////////////////////////////////////////////////////////////////////////////////
-func initMetricsCollector(appMetrics telemetry.Prometheus) {
-	go func() {
-		for {
-			// Obtenha a memória alocada pelo programa
-			var m runtime.MemStats
-			runtime.ReadMemStats(&m)
-			freeMemory, _ := GetFreeMemory()
-			appMetrics.MemoryUsageGauge.Set(freeMemory)
-
-			// Obtenha a utilização atual da CPU
-			cpuUsage, _ := GetCPUUsage()
-			appMetrics.CpuUsageGauge.Set(cpuUsage)
-
-			// time.Sleep(time.Second * 5)
-		}
-	}()
+type User struct {
+	User string `json:"user"`
 }
 
-func GetFreeMemory() (float64, error) {
-	var stat unix.Sysinfo_t
-
-	// Chama a função Sysinfo que preenche a struct Sysinfo_t
-	if err := unix.Sysinfo(&stat); err != nil {
-		return 0, fmt.Errorf("erro ao obter informações do sistema: %w", err)
-	}
-
-	// A quantidade de memória livre está em stat.Freeram e stat.Bufferram
-	// Os valores estão em KB, então multiplicamos por 1024 para obter em bytes
-	freeMemory := float64(stat.Freeram) * float64(stat.Unit)
-	bufferMemory := float64(stat.Bufferram) * float64(stat.Unit)
-
-	// Memória livre total
-	totalFreeMemory := freeMemory + bufferMemory
-
-	return totalFreeMemory, nil
-}
-
-func GetCPUUsage() (float64, error) {
-	idle1, total1, err := getCPUSample()
-	if err != nil {
-		return 0, err
-	}
-
-	time.Sleep(1 * time.Second)
-
-	idle2, total2, err := getCPUSample()
-	if err != nil {
-		return 0, err
-	}
-
-	idleTicks := float64(idle2 - idle1)
-	totalTicks := float64(total2 - total1)
-
-	if totalTicks == 0 {
-		return 0, fmt.Errorf("totalTicks é zero, possível erro na leitura das amostras")
-	}
-
-	cpuUsage := 100 * (totalTicks - idleTicks) / totalTicks
-	return cpuUsage, nil
-}
-
-// getCPUSample coleta uma amostra dos tempos de CPU.
-func getCPUSample() (uint64, uint64, error) {
-	file, err := os.Open("/proc/stat")
-	if err != nil {
-		return 0, 0, fmt.Errorf("erro ao abrir /proc/stat: %w", err)
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, "cpu ") {
-			fields := strings.Fields(line)
-			if len(fields) < 5 {
-				return 0, 0, fmt.Errorf("linha /proc/stat malformada: %s", line)
-			}
-
-			idle, err := strconv.ParseUint(fields[4], 10, 64)
-			if err != nil {
-				return 0, 0, fmt.Errorf("erro ao fazer parse de idle: %w", err)
-			}
-
-			total := uint64(0)
-			for _, field := range fields[1:] {
-				value, err := strconv.ParseUint(field, 10, 64)
-				if err != nil {
-					return 0, 0, fmt.Errorf("erro ao fazer parse de field: %w", err)
-				}
-				total += value
-			}
-
-			return idle, total, nil
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return 0, 0, fmt.Errorf("erro ao ler /proc/stat: %w", err)
-	}
-
-	return 0, 0, fmt.Errorf("linha de CPU não encontrada em /proc/stat")
+type Product struct {
+	Product string `json:"product"`
 }
