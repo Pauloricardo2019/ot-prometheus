@@ -8,18 +8,19 @@ import (
 	"ot-prometheus/models"
 	"ot-prometheus/service"
 	"ot-prometheus/telemetry"
-	"ot-prometheus/telemetryfs"
 	"strconv"
 	"time"
+
+	"go.opentelemetry.io/otel/trace"
 )
 
 type ProdutoHandle struct {
 	Service *service.ProdutoService
 	Metrics telemetry.Prometheus
-	Tracer  telemetryfs.Tracer
+	Tracer  trace.Tracer
 }
 
-func NewProdutoHandle(service *service.ProdutoService, metrics telemetry.Prometheus, tracer telemetryfs.Tracer) *ProdutoHandle {
+func NewProdutoHandle(service *service.ProdutoService, metrics telemetry.Prometheus, tracer trace.Tracer) *ProdutoHandle {
 	return &ProdutoHandle{
 		Service: service,
 		Metrics: metrics,
@@ -27,18 +28,17 @@ func NewProdutoHandle(service *service.ProdutoService, metrics telemetry.Prometh
 	}
 }
 
-func (a *ProdutoHandle) GetProduct() http.HandlerFunc {
+func (h *ProdutoHandle) GetProduct() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
 		ctx := r.Context()
-
-		ctx, span := a.Tracer.OTelTracer.Start(r.Context(), "Handler.GetProduct")
+		ctx, span := h.Tracer.Start(r.Context(), "Handler.GetProduct")
 		defer span.End()
 
 		var status string
 		defer func() {
-			a.Metrics.HTTP_StartRequestCounter.WithLabelValues("x_stone_balance_product_api", status).Inc()
+			h.Metrics.HTTP_StartRequestCounter.WithLabelValues("x_stone_balance_product_api", status).Inc()
 		}()
 
 		mr := models.Product{}
@@ -48,10 +48,10 @@ func (a *ProdutoHandle) GetProduct() http.HandlerFunc {
 			return
 		}
 
-		a.Metrics.API_ActiveRequestGauge.Inc()
-		defer a.Metrics.API_ActiveRequestGauge.Dec()
+		h.Metrics.API_ActiveRequestGauge.Inc()
+		defer h.Metrics.API_ActiveRequestGauge.Dec()
 
-		result, err := a.Service.GetProduct(ctx, mr.Product)
+		result, err := h.Service.GetProduct(ctx, mr.Product)
 		if err != nil {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			status = "5xx"
@@ -65,10 +65,10 @@ func (a *ProdutoHandle) GetProduct() http.HandlerFunc {
 		}
 		log.Println(result, status)
 
-		a.Metrics.HTTP_RequestCounter.WithLabelValues("x_stone_balance_product_api_increment").Inc() // Increment the counter
+		h.Metrics.HTTP_RequestCounter.WithLabelValues("x_stone_balance_product_api_increment").Inc()
 
 		duration := time.Since(start)
-		a.Metrics.API_CreateRequestDuration.WithLabelValues("x_stone_balance_product_api_duration", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
+		h.Metrics.API_CreateRequestDuration.WithLabelValues("x_stone_balance_product_api_duration", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(result))

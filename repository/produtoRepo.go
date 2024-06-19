@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"fmt"
+	"math/rand"
 	"time"
 
 	"go.opentelemetry.io/otel/trace"
@@ -17,20 +19,9 @@ func NewProdutoRepository(tracer trace.Tracer) *ProdutoRepository {
 	}
 }
 
-func (repo *ProdutoRepository) FetchUserData(ctx context.Context, userID string) (string, error) {
-	ctx, span := repo.Tracer.Start(ctx, "Repository.FetchUserData")
-	defer span.End()
-
-	// Simulando uma busca no banco de dados
-	time.Sleep(90 * time.Millisecond)
-	return "UserData for " + userID, nil
-}
-
-func (repo *ProdutoRepository) FetchProductData(ctx context.Context, productID string) (string, error) {
-	ctx, span := repo.Tracer.Start(ctx, "Repository.FetchProductData")
-	defer span.End()
-
-	// Simulando uma busca no banco de dados
-	time.Sleep(200 * time.Millisecond)
-	return "ProductData for " + productID, nil
+func (r *ProdutoRepository) FetchProductData(ctx context.Context, productID string) (string, error) {
+	// Simulating fetching product data from a database or external service
+	// Here you can add your implementation to fetch real product data
+	time.Sleep(time.Duration(rand.Intn(100)) * time.Millisecond)
+	return fmt.Sprintf("Product data for ID: %s", productID), nil
 }

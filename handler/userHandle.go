@@ -14,38 +14,36 @@ import (
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
 type UserHandle struct {
-	UserService *service.UserService
-	Metrics     telemetry.Prometheus
-	Tracer      telemetryfs.Tracer
+	Service *service.UserService
+	Metrics telemetry.Prometheus
+	Tracer  trace.Tracer
 }
 
-func NewUserHandle(service *service.UserService, metrics telemetry.Prometheus, tracer telemetryfs.Tracer) *UserHandle {
+func NewUserHandle(service *service.UserService, metrics telemetry.Prometheus, tracer trace.Tracer) *UserHandle {
 	return &UserHandle{
-		UserService: service,
-		Metrics:     metrics,
-		Tracer:      tracer,
+		Service: service,
+		Metrics: metrics,
+		Tracer:  tracer,
 	}
 }
 
-func (a *UserHandle) GetUser() http.HandlerFunc {
+func (h *UserHandle) GetUser() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		ctx := r.Context()
-
-		//Feito no vídeo assim, (SEM INJEÇÃO DE DEPENDÊNCIA)
-		tracer := telemetryfs.FromContext(ctx)
-		ctx, span := tracer.Start(r.Context(), "Handler.GetUser")
+		ctx, span := h.Tracer.Start(ctx, "Handler.GetUser")
 		defer span.End()
 
 		logger := telemetryfs.Logger(ctx)
 
 		var status string
 		defer func() {
-			a.Metrics.HTTP_StartRequestCounter.WithLabelValues("x_stone_balance_user_api", status).Inc()
+			h.Metrics.HTTP_StartRequestCounter.WithLabelValues("x_stone_balance_user_api", status).Inc()
 		}()
 
 		var mr models.User
@@ -56,12 +54,12 @@ func (a *UserHandle) GetUser() http.HandlerFunc {
 			return
 		}
 
-		a.Metrics.API_ActiveRequestGauge.Inc()
-		defer a.Metrics.API_ActiveRequestGauge.Dec()
+		h.Metrics.API_ActiveRequestGauge.Inc()
+		defer h.Metrics.API_ActiveRequestGauge.Dec()
 
 		span.SetAttributes(attribute.String("user", mr.User))
 
-		result, err := a.UserService.GetUser(ctx, mr.User)
+		result, err := h.Service.GetUser(ctx, mr.User)
 		if err != nil {
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
@@ -80,10 +78,10 @@ func (a *UserHandle) GetUser() http.HandlerFunc {
 
 		log.Println(result, status)
 
-		a.Metrics.HTTP_RequestCounter.WithLabelValues("x_stone_balance_user_api_increment").Inc() // Increment the counter
+		h.Metrics.HTTP_RequestCounter.WithLabelValues("x_stone_balance_user_api_increment").Inc()
 
 		duration := time.Since(start)
-		a.Metrics.API_CreateRequestDuration.WithLabelValues("x_stone_balance_user_api_duration", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
+		h.Metrics.API_CreateRequestDuration.WithLabelValues("x_stone_balance_user_api_duration", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(result))
