@@ -2,8 +2,8 @@ package telemetria
 
 import (
 	"context"
-	"net/http"
 
+	"github.com/labstack/echo/v4"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -14,10 +14,10 @@ const (
 	spanIDKey  = "span_id"
 )
 
-type loggerKey struct{}
+type LoggerKey struct{}
 
 func WithLogger(ctx context.Context, logger *zap.Logger) context.Context {
-	return context.WithValue(ctx, loggerKey{}, logger)
+	return context.WithValue(ctx, LoggerKey{}, logger)
 }
 
 func Logger(ctx context.Context) *zap.Logger {
@@ -25,7 +25,7 @@ func Logger(ctx context.Context) *zap.Logger {
 		panic("nil context passed to logger")
 	}
 
-	if logger, _ := ctx.Value(loggerKey{}).(*zap.Logger); logger != nil {
+	if logger, _ := ctx.Value(LoggerKey{}).(*zap.Logger); logger != nil {
 		if traceID := trace.SpanFromContext(ctx).SpanContext().TraceID(); traceID.IsValid() {
 			logger = logger.With(zap.String(traceIDKey, traceID.String()))
 		}
@@ -60,13 +60,22 @@ func NewLogger() (*zap.Logger, error) {
 	return logger, nil
 }
 
-func LoggerToContextMiddleware(logger *zap.Logger) func(next http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		fn := func(w http.ResponseWriter, r *http.Request) {
-			r = r.WithContext(WithLogger(r.Context(), logger))
-			next.ServeHTTP(w, r)
+func LoggerToContextMiddleware(logger *zap.Logger) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			req := c.Request()
+			req = req.WithContext(WithLogger(req.Context(), logger))
+			c.SetRequest(req)
+			return next(c)
 		}
-
-		return http.HandlerFunc(fn)
 	}
+}
+
+// LoggerFromContext returns the logger from the context.
+func LoggerFromContext(ctx context.Context) *zap.Logger {
+	logger, ok := ctx.Value(LoggerKey{}).(*zap.Logger)
+	if !ok {
+		return zap.NewNop() // Return a no-op logger if no logger is found
+	}
+	return logger
 }

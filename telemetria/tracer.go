@@ -3,9 +3,9 @@ package telemetria
 import (
 	"context"
 	"fmt"
-	"net/http"
 
 	"github.com/gofrs/uuid/v5"
+	"github.com/labstack/echo/v4"
 	"go.opentelemetry.io/contrib/propagators/b3"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -141,13 +141,14 @@ func HandleUnexpectedError(ctx context.Context, err error, fields ...zap.Field) 
 }
 
 // TracerToContextMiddleware associates a tracer with the current context.
-func TracerToContextMiddleware(tracer trace.Tracer) func(next http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		fn := func(w http.ResponseWriter, r *http.Request) {
-			r = r.WithContext(WithTracer(r.Context(), tracer))
-			next.ServeHTTP(w, r)
-		}
 
-		return http.HandlerFunc(fn)
+func TracerToContextMiddleware(tracer trace.Tracer) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			req := c.Request()
+			req = req.WithContext(WithTracer(req.Context(), tracer))
+			c.SetRequest(req)
+			return next(c)
+		}
 	}
 }

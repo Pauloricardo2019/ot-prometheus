@@ -5,10 +5,13 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
-	"github.com/go-chi/chi/v5"
+	"github.com/labstack/echo/v4"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.uber.org/zap"
 )
 
 func NewMetricsServer(options ...Option) (*http.Server, error) {
@@ -90,5 +93,23 @@ func (m *RedMetricsMiddleware) Handle() func(next http.Handler) http.Handler {
 
 			m.httpServerRequestDuration.With(labels).Observe(time.Since(start).Seconds() * 1000)
 		})
+	}
+}
+
+// LatencyMiddleware logs the latency of each request.
+func LatencyMiddleware(logger *zap.Logger) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			start := time.Now()
+			err := next(c)
+			latency := time.Since(start)
+			logger.Info("request completed",
+				zap.String("method", c.Request().Method),
+				zap.String("path", c.Request().URL.Path),
+				zap.Duration("latency", latency),
+				zap.Int("status", c.Response().Status),
+			)
+			return err
+		}
 	}
 }

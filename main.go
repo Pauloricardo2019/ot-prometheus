@@ -94,7 +94,6 @@ func main() {
 	userHandle := handler.NewUserHandle(userService, metrics, tracer.OTelTracer)
 
 	e := echo.New()
-	//e.Logger = telemetryfs.EchoLogger(logger)
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
 	e.Use(LoggerToContextMiddleware(logger))
