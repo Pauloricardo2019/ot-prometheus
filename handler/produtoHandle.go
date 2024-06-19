@@ -1,16 +1,16 @@
 package handler
 
 import (
-	"encoding/json"
-	"log"
 	"math/rand"
 	"net/http"
-	"ot-prometheus/models"
-	"ot-prometheus/service"
-	"ot-prometheus/telemetry"
 	"strconv"
 	"time"
 
+	"ot-prometheus/models"
+	"ot-prometheus/service"
+	"ot-prometheus/telemetry"
+
+	"github.com/labstack/echo/v4"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -28,49 +28,43 @@ func NewProdutoHandle(service *service.ProdutoService, metrics telemetry.Prometh
 	}
 }
 
-func (h *ProdutoHandle) GetProduct() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
+func (h *ProdutoHandle) GetProduct(c echo.Context) error {
+	start := time.Now()
 
-		ctx := r.Context()
-		ctx, span := h.Tracer.Start(r.Context(), "Handler.GetProduct")
-		defer span.End()
+	ctx := c.Request().Context()
+	ctx, span := h.Tracer.Start(ctx, "Handler.GetProduct")
+	defer span.End()
 
-		var status string
-		defer func() {
-			h.Metrics.HTTP_StartRequestCounter.WithLabelValues("x_stone_balance_product_api", status).Inc()
-		}()
+	var status string
+	defer func() {
+		h.Metrics.HTTP_StartRequestCounter.WithLabelValues("x_stone_balance_product_api", status).Inc()
+	}()
 
-		mr := models.Product{}
-		if err := json.NewDecoder(r.Body).Decode(&mr); err != nil {
-			http.Error(w, "Invalid request payload", http.StatusBadRequest)
-			status = "4xx"
-			return
-		}
-
-		h.Metrics.API_ActiveRequestGauge.Inc()
-		defer h.Metrics.API_ActiveRequestGauge.Dec()
-
-		result, err := h.Service.GetProduct(ctx, mr.Product)
-		if err != nil {
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			status = "5xx"
-			return
-		}
-
-		if rand.Float32() > 0.8 {
-			status = "4xx"
-		} else {
-			status = "2xx"
-		}
-		log.Println(result, status)
-
-		h.Metrics.HTTP_RequestCounter.WithLabelValues("x_stone_balance_product_api_increment").Inc()
-
-		duration := time.Since(start)
-		h.Metrics.API_CreateRequestDuration.WithLabelValues("x_stone_balance_product_api_duration", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
-
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(result))
+	mr := models.Product{}
+	if err := c.Bind(&mr); err != nil {
+		status = "4xx"
+		return echo.NewHTTPError(http.StatusBadRequest, "Invalid request payload")
 	}
+
+	h.Metrics.API_ActiveRequestGauge.Inc()
+	defer h.Metrics.API_ActiveRequestGauge.Dec()
+
+	result, err := h.Service.GetProduct(ctx, mr.Product)
+	if err != nil {
+		status = "5xx"
+		return echo.NewHTTPError(http.StatusInternalServerError, "Internal Server Error")
+	}
+
+	if rand.Float32() > 0.8 {
+		status = "4xx"
+	} else {
+		status = "2xx"
+	}
+
+	h.Metrics.HTTP_RequestCounter.WithLabelValues("x_stone_balance_product_api_increment").Inc()
+
+	duration := time.Since(start)
+	h.Metrics.API_CreateRequestDuration.WithLabelValues("x_stone_balance_product_api_duration", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
+
+	return c.String(http.StatusOK, result)
 }
