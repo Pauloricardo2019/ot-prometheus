@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
-	"runtime"
-
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
+	"net/http"
+	"runtime"
 
 	"ot-prometheus/handler"
 	"ot-prometheus/repository"
@@ -24,6 +24,30 @@ var (
 	BuildTag    = "1.0.0"
 	BuildTime   = "undefined"
 )
+
+// LoggerToContextMiddleware associates a logger with the request context.
+func LoggerToContextMiddleware(logger *zap.Logger) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			req := c.Request()
+			req = req.WithContext(telemetryfs.WithLogger(req.Context(), logger))
+			c.SetRequest(req)
+			return next(c)
+		}
+	}
+}
+
+// TracerToContextMiddleware associates a tracer with the request context.
+func TracerToContextMiddleware(tracer trace.Tracer) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			req := c.Request()
+			req = req.WithContext(telemetryfs.WithTracer(req.Context(), tracer))
+			c.SetRequest(req)
+			return next(c)
+		}
+	}
+}
 
 func main() {
 	logger, err := telemetryfs.NewLogger()
@@ -69,11 +93,11 @@ func main() {
 	userHandle := handler.NewUserHandle(userService, metrics, tracer.OTelTracer)
 
 	e := echo.New()
-	e.Logger = telemetryfs.EchoLogger(logger)
+	//e.Logger = telemetryfs.EchoLogger(logger)
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
-	e.Use(handler.ZapEchoMiddleware(logger))
-	e.Use(handler.TracerEchoMiddleware(tracer.OTelTracer))
+	e.Use(LoggerToContextMiddleware(logger))
+	e.Use(TracerToContextMiddleware(tracer.OTelTracer))
 
 	e.POST("/user", userHandle.GetUser)
 	e.POST("/product", productHandle.GetProduct)
