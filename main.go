@@ -4,13 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"runtime"
+
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
-	"net/http"
-	"runtime"
 
 	"ot-prometheus/handler"
 	"ot-prometheus/repository"
@@ -133,5 +135,41 @@ func main() {
 }
 
 func initMetricsCollector(metrics telemetry.Prometheus) {
-	// Initialize Prometheus metrics as before
+	metrics.HTTP_RequestCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "http_request_total",
+			Help: "Total number of HTTP requests made.",
+		},
+		[]string{"handler", "status"},
+	)
+	prometheus.MustRegister(metrics.HTTP_RequestCounter)
+
+	metrics.HTTP_StartRequestCounter = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "http_start_request_total",
+			Help: "Total number of HTTP start requests made.",
+		},
+		[]string{"handler", "status"},
+	)
+	prometheus.MustRegister(metrics.HTTP_StartRequestCounter)
+
+	metrics.API_ActiveRequestGauge = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "api_active_requests",
+			Help: "Number of active API requests.",
+		},
+	)
+	prometheus.MustRegister(metrics.API_ActiveRequestGauge)
+
+	metrics.API_CreateRequestDuration = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name: "api_request_duration_seconds",
+			Help: "Duration of API requests in seconds.",
+			Buckets: []float64{
+				0.1, 0.3, 1.2, 5.0,
+			},
+		},
+		[]string{"handler", "duration"},
+	)
+	prometheus.MustRegister(metrics.API_CreateRequestDuration)
 }
