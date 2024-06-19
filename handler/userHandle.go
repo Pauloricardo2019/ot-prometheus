@@ -8,8 +8,7 @@ import (
 
 	"ot-prometheus/models"
 	"ot-prometheus/service"
-	"ot-prometheus/telemetry"
-	"ot-prometheus/telemetryfs"
+	"ot-prometheus/telemetria"
 
 	"github.com/labstack/echo/v4"
 	"go.opentelemetry.io/otel/attribute"
@@ -20,11 +19,11 @@ import (
 
 type UserHandle struct {
 	Service *service.UserService
-	Metrics telemetry.Prometheus
+	Metrics telemetria.Prometheus
 	Tracer  trace.Tracer
 }
 
-func NewUserHandle(service *service.UserService, metrics telemetry.Prometheus, tracer trace.Tracer) *UserHandle {
+func NewUserHandle(service *service.UserService, metrics telemetria.Prometheus, tracer trace.Tracer) *UserHandle {
 	return &UserHandle{
 		Service: service,
 		Metrics: metrics,
@@ -39,7 +38,7 @@ func (h *UserHandle) GetUser(c echo.Context) error {
 	ctx, span := h.Tracer.Start(ctx, "Handler.GetUser")
 	defer span.End()
 
-	logger := telemetryfs.Logger(ctx)
+	logger := telemetria.Logger(ctx)
 
 	var status string
 	defer func() {

@@ -8,7 +8,7 @@ import (
 
 	"ot-prometheus/models"
 	"ot-prometheus/service"
-	"ot-prometheus/telemetry"
+	"ot-prometheus/telemetria"
 
 	"github.com/labstack/echo/v4"
 	"go.opentelemetry.io/otel/trace"
@@ -16,11 +16,11 @@ import (
 
 type ProdutoHandle struct {
 	Service *service.ProdutoService
-	Metrics telemetry.Prometheus
+	Metrics telemetria.Prometheus
 	Tracer  trace.Tracer
 }
 
-func NewProdutoHandle(service *service.ProdutoService, metrics telemetry.Prometheus, tracer trace.Tracer) *ProdutoHandle {
+func NewProdutoHandle(service *service.ProdutoService, metrics telemetria.Prometheus, tracer trace.Tracer) *ProdutoHandle {
 	return &ProdutoHandle{
 		Service: service,
 		Metrics: metrics,

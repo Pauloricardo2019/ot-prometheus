@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 	"ot-prometheus/repository"
-	"ot-prometheus/telemetry"
+	"ot-prometheus/telemetria"
 
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -12,10 +12,10 @@ import (
 type UserService struct {
 	UserRepo *repository.UserRepository
 	Tracer   trace.Tracer
-	Metrics  telemetry.Prometheus
+	Metrics  telemetria.Prometheus
 }
 
-func NewUserService(repo *repository.UserRepository, tracer trace.Tracer, metrics telemetry.Prometheus) *UserService {
+func NewUserService(repo *repository.UserRepository, tracer trace.Tracer, metrics telemetria.Prometheus) *UserService {
 	return &UserService{
 		UserRepo: repo,
 		Tracer:   tracer,

@@ -8,6 +8,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"ot-prometheus/telemetria"
 	"runtime"
 	"strconv"
 	"time"
@@ -20,9 +21,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-
-	"ot-prometheus/telemetry"
-	"ot-prometheus/telemetryfs"
 )
 
 var (
@@ -32,7 +30,7 @@ var (
 )
 
 func main() {
-	logger, err := telemetryfs.NewLogger()
+	logger, err := telemetria.NewLogger()
 	if err != nil {
 		panic(fmt.Errorf("creating logger: %w", err))
 	}
@@ -49,10 +47,10 @@ func main() {
 		zap.Int("runtime_num_cpu", runtime.NumCPU()),
 	)
 
-	ctx := telemetryfs.WithLogger(context.Background(), logger)
+	ctx := telemetria.WithLogger(context.Background(), logger)
 
-	metrics := telemetry.NewPrometheusMetrics()
-	tracer, err := telemetryfs.NewTracer(ctx, "OTEL", BuildTag)
+	metrics := telemetria.NewPrometheusMetrics()
+	tracer, err := telemetria.NewTracer(ctx, "OTEL", BuildTag)
 	if err != nil {
 		logger.Error("error creating the tracer", zap.Error(err))
 		return
@@ -64,7 +62,7 @@ func main() {
 		}
 	}()
 
-	ctx = telemetryfs.WithTracer(ctx, tracer.OTelTracer)
+	ctx = telemetria.WithTracer(ctx, tracer.OTelTracer)
 
 	productRepo := NewProdutoRepository(tracer.OTelTracer)
 	productService := NewProdutoService(productRepo, tracer.OTelTracer, metrics)
@@ -118,11 +116,11 @@ func main() {
 
 type ProdutoHandle struct {
 	Service *ProdutoService
-	Metrics telemetry.Prometheus
+	Metrics telemetria.Prometheus
 	Tracer  trace.Tracer
 }
 
-func NewProdutoHandle(service *ProdutoService, metrics telemetry.Prometheus, tracer trace.Tracer) *ProdutoHandle {
+func NewProdutoHandle(service *ProdutoService, metrics telemetria.Prometheus, tracer trace.Tracer) *ProdutoHandle {
 	return &ProdutoHandle{
 		Service: service,
 		Metrics: metrics,
@@ -179,11 +177,11 @@ func (h *ProdutoHandle) GetProduct() http.HandlerFunc {
 
 type UserHandle struct {
 	Service *UserService
-	Metrics telemetry.Prometheus
+	Metrics telemetria.Prometheus
 	Tracer  trace.Tracer
 }
 
-func NewUserHandle(service *UserService, metrics telemetry.Prometheus, tracer trace.Tracer) *UserHandle {
+func NewUserHandle(service *UserService, metrics telemetria.Prometheus, tracer trace.Tracer) *UserHandle {
 	return &UserHandle{
 		Service: service,
 		Metrics: metrics,
@@ -198,7 +196,7 @@ func (h *UserHandle) GetUser() http.HandlerFunc {
 		ctx, span := h.Tracer.Start(ctx, "Handler.GetUser")
 		defer span.End()
 
-		logger := telemetryfs.Logger(ctx)
+		logger := telemetria.Logger(ctx)
 
 		var status string
 		defer func() {
@@ -250,10 +248,10 @@ func (h *UserHandle) GetUser() http.HandlerFunc {
 type ProdutoService struct {
 	Repository *ProdutoRepository
 	Tracer     trace.Tracer
-	Metrics    telemetry.Prometheus
+	Metrics    telemetria.Prometheus
 }
 
-func NewProdutoService(repo *ProdutoRepository, tracer trace.Tracer, metrics telemetry.Prometheus) *ProdutoService {
+func NewProdutoService(repo *ProdutoRepository, tracer trace.Tracer, metrics telemetria.Prometheus) *ProdutoService {
 	return &ProdutoService{
 		Repository: repo,
 		Tracer:     tracer,
@@ -281,10 +279,10 @@ func (s *ProdutoService) GetProduct(ctx context.Context, product string) (string
 type UserService struct {
 	UserRepo *UserRepository
 	Tracer   trace.Tracer
-	Metrics  telemetry.Prometheus
+	Metrics  telemetria.Prometheus
 }
 
-func NewUserService(repo *UserRepository, tracer trace.Tracer, metrics telemetry.Prometheus) *UserService {
+func NewUserService(repo *UserRepository, tracer trace.Tracer, metrics telemetria.Prometheus) *UserService {
 	return &UserService{
 		UserRepo: repo,
 		Tracer:   tracer,
@@ -356,7 +354,7 @@ func ZapMiddleware(logger *zap.Logger) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
-			ctx = telemetryfs.WithLogger(ctx, logger)
+			ctx = telemetria.WithLogger(ctx, logger)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -366,13 +364,13 @@ func TracerMiddleware(otTracer trace.Tracer) func(next http.Handler) http.Handle
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
-			ctx = telemetryfs.WithTracer(ctx, otTracer)
+			ctx = telemetria.WithTracer(ctx, otTracer)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }
 
-func initMetricsCollector(metrics telemetry.Prometheus) {
+func initMetricsCollector(metrics telemetria.Prometheus) {
 	metrics.HTTP_RequestCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "http_request_total",

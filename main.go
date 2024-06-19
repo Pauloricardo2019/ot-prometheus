@@ -9,7 +9,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
@@ -17,8 +17,7 @@ import (
 	"ot-prometheus/handler"
 	"ot-prometheus/repository"
 	"ot-prometheus/service"
-	"ot-prometheus/telemetry"
-	"ot-prometheus/telemetryfs"
+	"ot-prometheus/telemetria"
 )
 
 var (
@@ -32,7 +31,7 @@ func LoggerToContextMiddleware(logger *zap.Logger) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			req := c.Request()
-			req = req.WithContext(telemetryfs.WithLogger(req.Context(), logger))
+			req = req.WithContext(telemetria.WithLogger(req.Context(), logger))
 			c.SetRequest(req)
 			return next(c)
 		}
@@ -44,7 +43,7 @@ func TracerToContextMiddleware(tracer trace.Tracer) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			req := c.Request()
-			req = req.WithContext(telemetryfs.WithTracer(req.Context(), tracer))
+			req = req.WithContext(telemetria.WithTracer(req.Context(), tracer))
 			c.SetRequest(req)
 			return next(c)
 		}
@@ -52,7 +51,7 @@ func TracerToContextMiddleware(tracer trace.Tracer) echo.MiddlewareFunc {
 }
 
 func main() {
-	logger, err := telemetryfs.NewLogger()
+	logger, err := telemetria.NewLogger()
 	if err != nil {
 		panic(fmt.Errorf("creating logger: %w", err))
 	}
@@ -69,10 +68,10 @@ func main() {
 		zap.Int("runtime_num_cpu", runtime.NumCPU()),
 	)
 
-	ctx := telemetryfs.WithLogger(context.Background(), logger)
+	ctx := telemetria.WithLogger(context.Background(), logger)
 
-	metrics := telemetry.NewPrometheusMetrics()
-	tracer, err := telemetryfs.NewTracer(ctx, "OTEL", BuildTag)
+	metrics := telemetria.NewPrometheusMetrics()
+	tracer, err := telemetria.NewTracer(ctx, "OTEL", BuildTag)
 	if err != nil {
 		logger.Error("error creating the tracer", zap.Error(err))
 		return
@@ -84,7 +83,7 @@ func main() {
 		}
 	}()
 
-	ctx = telemetryfs.WithTracer(ctx, tracer.OTelTracer)
+	ctx = telemetria.WithTracer(ctx, tracer.OTelTracer)
 
 	productRepo := repository.NewProdutoRepository(tracer.OTelTracer)
 	productService := service.NewProdutoService(productRepo, tracer.OTelTracer, metrics)
@@ -105,7 +104,7 @@ func main() {
 	e.POST("/product", productHandle.GetProduct)
 	e.GET("/metrics", echo.WrapHandler(promhttp.Handler()))
 
-	initMetricsCollector(metrics)
+	telemetria.InitMetricsCollector(metrics)
 
 	go func() {
 		logger.Info("server started",
@@ -132,44 +131,4 @@ func main() {
 	}()
 
 	select {}
-}
-
-func initMetricsCollector(metrics telemetry.Prometheus) {
-	metrics.HTTP_RequestCounter = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "http_request_total",
-			Help: "Total number of HTTP requests made.",
-		},
-		[]string{"handler", "status"},
-	)
-	prometheus.MustRegister(metrics.HTTP_RequestCounter)
-
-	metrics.HTTP_StartRequestCounter = prometheus.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "http_start_request_total",
-			Help: "Total number of HTTP start requests made.",
-		},
-		[]string{"handler", "status"},
-	)
-	prometheus.MustRegister(metrics.HTTP_StartRequestCounter)
-
-	metrics.API_ActiveRequestGauge = prometheus.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "api_active_requests",
-			Help: "Number of active API requests.",
-		},
-	)
-	prometheus.MustRegister(metrics.API_ActiveRequestGauge)
-
-	metrics.API_CreateRequestDuration = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name: "api_request_duration_seconds",
-			Help: "Duration of API requests in seconds.",
-			Buckets: []float64{
-				0.1, 0.3, 1.2, 5.0,
-			},
-		},
-		[]string{"handler", "duration"},
-	)
-	prometheus.MustRegister(metrics.API_CreateRequestDuration)
 }

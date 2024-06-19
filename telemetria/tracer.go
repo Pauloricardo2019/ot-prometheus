@@ -1,8 +1,10 @@
-package telemetryfs
+package telemetria
 
 import (
 	"context"
 	"fmt"
+	"net/http"
+
 	"github.com/gofrs/uuid/v5"
 	"go.opentelemetry.io/contrib/propagators/b3"
 	"go.opentelemetry.io/otel"
@@ -14,7 +16,6 @@ import (
 	semconv "go.opentelemetry.io/otel/semconv/v1.8.0"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
-	"net/http"
 )
 
 var tracer trace.Tracer

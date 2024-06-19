@@ -1,11 +1,9 @@
-package telemetryfs
+package telemetria
 
 import (
 	"net/http"
 	"strconv"
 	"time"
-
-	"ot-prometheus/telemetry"
 
 	"github.com/go-chi/chi/middleware"
 	"github.com/go-chi/chi/v5"
@@ -83,11 +81,11 @@ func (m *RedMetricsMiddleware) Handle() func(next http.Handler) http.Handler {
 
 			for _, label := range m.additionalLabels {
 				if q.Has(label) {
-					labels[label] = telemetry.StatusTrue
+					labels[label] = StatusTrue
 					continue
 				}
 
-				labels[label] = telemetry.StatusFalse
+				labels[label] = StatusFalse
 			}
 
 			m.httpServerRequestDuration.With(labels).Observe(time.Since(start).Seconds() * 1000)

@@ -1,4 +1,4 @@
-package telemetryfs
+package telemetria
 
 import (
 	"context"
