@@ -37,7 +37,7 @@ func (h *ProdutoHandle) GetProduct(c echo.Context) error {
 
 	var status string
 	defer func() {
-		h.Metrics.HTTP_StartRequestCounter.WithLabelValues("x_stone_balance_product_api", status).Inc()
+		h.Metrics.HTTP_StartRequestCounter.WithLabelValues(telemetria.LABEL_PREFIXO+"product_api", status).Inc()
 	}()
 
 	mr := models.Product{}
@@ -61,10 +61,10 @@ func (h *ProdutoHandle) GetProduct(c echo.Context) error {
 		status = "2xx"
 	}
 
-	h.Metrics.HTTP_RequestCounter.WithLabelValues("x_stone_balance_product_api_increment").Inc()
+	h.Metrics.HTTP_RequestCounter.WithLabelValues(telemetria.LABEL_PREFIXO + "product_api_increment").Inc()
 
 	duration := time.Since(start)
-	h.Metrics.API_CreateRequestDuration.WithLabelValues("x_stone_balance_product_api_duration", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
+	h.Metrics.API_CreateRequestDuration.WithLabelValues(telemetria.LABEL_PREFIXO+"product_api_duration", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
 
 	return c.String(http.StatusOK, result)
 }

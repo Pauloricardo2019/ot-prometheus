@@ -8,12 +8,12 @@ import (
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
 	"github.com/labstack/echo/v4"
-
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 )
 
+// NewMetricsServer creates and returns a new HTTP server for Prometheus metrics.
 func NewMetricsServer(options ...Option) (*http.Server, error) {
 	opts := defaultOptions()
 	for _, option := range options {
@@ -33,11 +33,16 @@ func NewMetricsServer(options ...Option) (*http.Server, error) {
 	return server, nil
 }
 
+// RedMetricsMiddleware provides middleware for capturing Prometheus metrics.
 type RedMetricsMiddleware struct {
-	httpServerRequestDuration *prometheus.HistogramVec
-	additionalLabels          []string
+	httpServerRequestDuration   *prometheus.HistogramVec
+	httpServerRequestTotal      *prometheus.CounterVec
+	httpServerResponseSizeBytes *prometheus.SummaryVec
+	httpServerErrorsTotal       *prometheus.CounterVec
+	additionalLabels            []string
 }
 
+// NewRedMetricsMiddleware creates a new RedMetricsMiddleware instance with optional configuration.
 func NewRedMetricsMiddleware(options ...Option) *RedMetricsMiddleware {
 	opts := defaultOptions()
 	for _, option := range options {
@@ -56,13 +61,41 @@ func NewRedMetricsMiddleware(options ...Option) *RedMetricsMiddleware {
 			},
 			append(defaultLabels, opts.additionalLabels...),
 		),
+		httpServerRequestTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "http_server_requests_total",
+				Help: "Total number of HTTP requests",
+			},
+			append(defaultLabels, opts.additionalLabels...),
+		),
+		httpServerResponseSizeBytes: prometheus.NewSummaryVec(
+			prometheus.SummaryOpts{
+				Name:       "http_server_response_size_bytes",
+				Help:       "Size of HTTP responses in bytes",
+				Objectives: map[float64]float64{},
+			},
+			append(defaultLabels, opts.additionalLabels...),
+		),
+		httpServerErrorsTotal: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "http_server_errors_total",
+				Help: "Total number of HTTP errors",
+			},
+			append(defaultLabels, opts.additionalLabels...),
+		),
 	}
 
-	opts.register.MustRegister(metrics.httpServerRequestDuration)
+	opts.register.MustRegister(
+		metrics.httpServerRequestDuration,
+		metrics.httpServerRequestTotal,
+		metrics.httpServerResponseSizeBytes,
+		metrics.httpServerErrorsTotal,
+	)
 
 	return &metrics
 }
 
+// Handle returns a middleware handler function for capturing HTTP request metrics.
 func (m *RedMetricsMiddleware) Handle() func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -81,22 +114,28 @@ func (m *RedMetricsMiddleware) Handle() func(next http.Handler) http.Handler {
 			}
 
 			q := r.URL.Query()
-
 			for _, label := range m.additionalLabels {
 				if q.Has(label) {
-					labels[label] = StatusTrue
+					labels[label] = "true"
 					continue
 				}
-
-				labels[label] = StatusFalse
+				labels[label] = "false"
 			}
 
-			m.httpServerRequestDuration.With(labels).Observe(time.Since(start).Seconds() * 1000)
+			duration := time.Since(start).Seconds() * 1000
+
+			m.httpServerRequestDuration.With(labels).Observe(duration)
+			m.httpServerRequestTotal.With(labels).Inc()
+			m.httpServerResponseSizeBytes.With(labels).Observe(float64(dw.BytesWritten()))
+
+			if dw.Status() >= 400 {
+				m.httpServerErrorsTotal.With(labels).Inc()
+			}
 		})
 	}
 }
 
-// LatencyMiddleware logs the latency of each request.
+// LatencyMiddleware logs the latency of each request using the provided zap.Logger.
 func LatencyMiddleware(logger *zap.Logger) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {

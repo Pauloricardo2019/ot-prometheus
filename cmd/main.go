@@ -138,7 +138,7 @@ func (h *ProdutoHandle) GetProduct() http.HandlerFunc {
 
 		var status string
 		defer func() {
-			h.Metrics.HTTP_StartRequestCounter.WithLabelValues("x_stone_balance_product_api", status).Inc()
+			h.Metrics.HTTP_StartRequestCounter.WithLabelValues(telemetria.LABEL_PREFIXO+"product_api", status).Inc()
 		}()
 
 		mr := Product{}
@@ -165,10 +165,10 @@ func (h *ProdutoHandle) GetProduct() http.HandlerFunc {
 		}
 		log.Println(result, status)
 
-		h.Metrics.HTTP_RequestCounter.WithLabelValues("x_stone_balance_product_api_increment").Inc()
+		h.Metrics.HTTP_RequestCounter.WithLabelValues(telemetria.LABEL_PREFIXO + "product_api_increment").Inc()
 
 		duration := time.Since(start)
-		h.Metrics.API_CreateRequestDuration.WithLabelValues("x_stone_balance_product_api_duration", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
+		h.Metrics.API_CreateRequestDuration.WithLabelValues(telemetria.LABEL_PREFIXO+"product_api_duration", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(result))
@@ -200,7 +200,7 @@ func (h *UserHandle) GetUser() http.HandlerFunc {
 
 		var status string
 		defer func() {
-			h.Metrics.HTTP_StartRequestCounter.WithLabelValues("x_stone_balance_user_api", status).Inc()
+			h.Metrics.HTTP_StartRequestCounter.WithLabelValues(telemetria.LABEL_PREFIXO+"user_api", status).Inc()
 		}()
 
 		var mr User
@@ -235,10 +235,10 @@ func (h *UserHandle) GetUser() http.HandlerFunc {
 
 		log.Println(result, status)
 
-		h.Metrics.HTTP_RequestCounter.WithLabelValues("x_stone_balance_user_api_increment").Inc()
+		h.Metrics.HTTP_RequestCounter.WithLabelValues(telemetria.LABEL_PREFIXO + "user_api_increment").Inc()
 
 		duration := time.Since(start)
-		h.Metrics.API_CreateRequestDuration.WithLabelValues("x_stone_balance_user_api_duration", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
+		h.Metrics.API_CreateRequestDuration.WithLabelValues(telemetria.LABEL_PREFIXO+"user_api_duration", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(result))

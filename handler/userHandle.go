@@ -42,7 +42,7 @@ func (h *UserHandle) GetUser(c echo.Context) error {
 
 	var status string
 	defer func() {
-		h.Metrics.HTTP_StartRequestCounter.WithLabelValues("x_stone_balance_user_api", status).Inc()
+		h.Metrics.HTTP_StartRequestCounter.WithLabelValues(telemetria.LABEL_PREFIXO+"user_api", status).Inc()
 	}()
 
 	var mr models.User
@@ -74,10 +74,10 @@ func (h *UserHandle) GetUser(c echo.Context) error {
 		status = "2xx"
 	}
 
-	h.Metrics.HTTP_RequestCounter.WithLabelValues("x_stone_balance_user_api_increment").Inc()
+	h.Metrics.HTTP_RequestCounter.WithLabelValues(telemetria.LABEL_PREFIXO + "user_api_increment").Inc()
 
 	duration := time.Since(start)
-	h.Metrics.API_CreateRequestDuration.WithLabelValues("x_stone_balance_user_api_duration", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
+	h.Metrics.API_CreateRequestDuration.WithLabelValues(telemetria.LABEL_PREFIXO+"api_duration", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
 
 	return c.String(http.StatusOK, result)
 }

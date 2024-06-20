@@ -15,10 +15,12 @@ const (
 	StatusFailure = "failure"
 )
 
+// Prometheus encapsulates all the API metrics.
 type Prometheus struct {
 	ApiMetrics
 }
 
+// NewPrometheusMetrics initializes and registers Prometheus metrics, returning a Prometheus struct.
 func NewPrometheusMetrics() Prometheus {
 	apiMetrics := NewApiMetrics()
 
@@ -38,6 +40,7 @@ func NewPrometheusMetrics() Prometheus {
 	}
 }
 
+// ApiMetrics defines all the metrics for the API.
 type ApiMetrics struct {
 	HTTP_RequestCounter       *prometheus.CounterVec
 	API_CreateRequestDuration *prometheus.HistogramVec
@@ -49,57 +52,58 @@ type ApiMetrics struct {
 	CPUUsageGauge             prometheus.Gauge
 }
 
+// NewApiMetrics initializes and returns an ApiMetrics struct with all the defined metrics.
 func NewApiMetrics() ApiMetrics {
 	return ApiMetrics{
 		HTTP_RequestCounter: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "stone_http_request_counter",
+			Name: PREFIXO + "http_request_counter" + COUNTER,
 			Help: "Count how many report statements have been added",
 		},
 			[]string{"handler_name"},
 		),
 		API_CreateRequestDuration: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Name:    "stone_response_time_seconds",
+				Name:    PREFIXO + "response_time_seconds" + HISTO,
 				Help:    "Histogram of response times for handler in seconds",
 				Buckets: []float64{0.1, 0.5, 1, 2, 5, 10, 30, 60, 120},
 			},
 			[]string{"handler_name", "response_time"},
 		),
 		API_ActiveRequestGauge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "stone_active_requests",
+			Name: PREFIXO + "stone_active_requests" + GAUGE,
 			Help: "Current number of active requests being handled",
 		}),
 		HTTP_StartRequestCounter: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "stone_http_request_status_count", // metric name
+				Name: PREFIXO + "http_request_status_count" + COUNTER, // metric name
 				Help: "Count of status returned by user.",
 			},
 			[]string{"user", "status"}, // labels
 		),
-
 		MemoryUsageGauge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "stone_app_memory_usage_bytes",
+			Name: PREFIXO + "app_memory_usage_bytes" + GAUGE,
 			Help: "Current memory usage of the application in bytes.",
 		}),
 		MemoryAllocGauge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "stone_app_memory_alloc_bytes",
+			Name: PREFIXO + "app_memory_alloc_bytes" + GAUGE,
 			Help: "Current memory allocated by the application in bytes.",
 		}),
 		MemorySysGauge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "stone_app_memory_sys_bytes",
+			Name: PREFIXO + "app_memory_sys_bytes" + GAUGE,
 			Help: "Current memory usage by the system in bytes.",
 		}),
 		CPUUsageGauge: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "stone_app_cpu_usage_percent",
+			Name: PREFIXO + "app_cpu_usage_percent" + GAUGE,
 			Help: "Current CPU usage of the application as a percentage.",
 		}),
 	}
 }
 
+// InitMetricsCollector initializes and registers additional Prometheus metrics.
 func InitMetricsCollector(metrics Prometheus) {
 	metrics.HTTP_RequestCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "http_request_total",
+			Name: PREFIXO + "http_request_total" + COUNTER,
 			Help: "Total number of HTTP requests made.",
 		},
 		[]string{"handler", "status"},
@@ -108,7 +112,7 @@ func InitMetricsCollector(metrics Prometheus) {
 
 	metrics.HTTP_StartRequestCounter = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "http_start_request_total",
+			Name: PREFIXO + "http_start_request_total" + COUNTER,
 			Help: "Total number of HTTP start requests made.",
 		},
 		[]string{"handler", "status"},
@@ -117,7 +121,7 @@ func InitMetricsCollector(metrics Prometheus) {
 
 	metrics.API_ActiveRequestGauge = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "api_active_requests",
+			Name: PREFIXO + "api_active_requests+GAUGE",
 			Help: "Number of active API requests.",
 		},
 	)
@@ -125,7 +129,7 @@ func InitMetricsCollector(metrics Prometheus) {
 
 	metrics.API_CreateRequestDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name: "api_request_duration_seconds",
+			Name: PREFIXO + "api_request_duration_seconds" + HISTO,
 			Help: "Duration of API requests in seconds.",
 			Buckets: []float64{
 				0.1, 0.3, 1.2, 5.0,

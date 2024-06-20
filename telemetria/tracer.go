@@ -18,6 +18,22 @@ import (
 	"go.uber.org/zap"
 )
 
+// TracerConfig represents the configuration for the tracer.
+type TracerConfig struct {
+	ServiceName      string  `conf:"env:SERVICE_NAME"`
+	ServiceNamespace string  `conf:"env:SERVICE_NAMESPACE"`
+	Endpoint         string  `conf:"env:COLLECTOR_ENDPOINT"`
+	Environment      string  `conf:"env:DEPLOYMENT_ENVIRONMENT"`
+	SamplingRatio    float64 `conf:"env:SAMPLING_RATIO"`
+}
+
+// Tracer encapsulates the OpenTelemetry tracer and its components.
+type Tracer struct {
+	OTelTracer     trace.Tracer
+	tracerProvider *sdkTrace.TracerProvider
+	exporter       *otlptrace.Exporter
+}
+
 var tracer trace.Tracer
 
 var (
@@ -28,50 +44,20 @@ var (
 	SAMPLING_RATIO         = 1.0
 )
 
-// TracerConfig represents the configuration for the tracer.
-type TracerConfig struct {
-	ServiceName      string `conf:"env:SERVICE_NAME"`
-	ServiceNamespace string `conf:"env:SERVICE_NAMESPACE"`
-	Endpoint         string `conf:"env:COLLECTOR_ENDPOINT"`
-	Environment      string `conf:"env:DEPLOYMENT_ENVIRONMENT"`
-	// The ratio of samples sent by TraceID. See more on TraceIDRatioBased.
-	// NOTE: The sampling in production is always 1% (100:1). So just values lesser than 1% will make an effect.
-	SamplingRatio float64 `conf:"env:SAMPLING_RATIO"`
-}
-
-type Tracer struct {
-	OTelTracer trace.Tracer
-
-	tracerProvider *sdkTrace.TracerProvider
-	exporter       *otlptrace.Exporter
-}
-
-// Shutdown shuts down the tracer and exporter.
-func (t Tracer) Shutdown(ctx context.Context) error {
-	var err error
-
-	if shutdownErr := t.tracerProvider.Shutdown(ctx); shutdownErr != nil {
-		err = fmt.Errorf("shutting down otel tracer provider: %w", shutdownErr)
-	}
-
-	if shutdownErr := t.exporter.Shutdown(ctx); shutdownErr != nil {
-		err = fmt.Errorf("shutting down otel tracer exporter: %w", shutdownErr)
-	}
-
-	return err
-
-}
-
+// NewTracer initializes a new OpenTelemetry tracer with the provided context, prefix, and appVersion.
 func NewTracer(ctx context.Context, prefix, appVersion string) (Tracer, error) {
-	var cfg TracerConfig
+	cfg := TracerConfig{
+		ServiceName:      SERVICE_NAME,
+		ServiceNamespace: SERVICE_NAMESPACE,
+		Endpoint:         COLLECTOR_ENDPOINT,
+		Environment:      DEPLOYMENT_ENVIRONMENT,
+		SamplingRatio:    SAMPLING_RATIO,
+	}
 
-	cfg.ServiceName = SERVICE_NAME
-	cfg.ServiceNamespace = SERVICE_NAMESPACE
-	cfg.Endpoint = COLLECTOR_ENDPOINT
-	cfg.Environment = DEPLOYMENT_ENVIRONMENT
-	cfg.SamplingRatio = SAMPLING_RATIO
-
-	client := otlptracegrpc.NewClient(otlptracegrpc.WithEndpoint(cfg.Endpoint), otlptracegrpc.WithInsecure())
+	client := otlptracegrpc.NewClient(
+		otlptracegrpc.WithEndpoint(cfg.Endpoint),
+		otlptracegrpc.WithInsecure(),
+	)
 
 	exporter, err := otlptrace.New(ctx, client)
 	if err != nil {
@@ -95,10 +81,10 @@ func NewTracer(ctx context.Context, prefix, appVersion string) (Tracer, error) {
 	}, nil
 }
 
+// newResource creates a new resource for the tracer based on the given configuration and app version.
 func newResource(cfg TracerConfig, appVersion string) *resource.Resource {
 	return resource.NewWithAttributes(
 		semconv.SchemaURL,
-		// the service name used to display traces in backends
 		semconv.ServiceNamespaceKey.String(cfg.ServiceNamespace),
 		semconv.ServiceNameKey.String(cfg.ServiceName),
 		semconv.DeploymentEnvironmentKey.String(cfg.Environment),
@@ -107,10 +93,22 @@ func newResource(cfg TracerConfig, appVersion string) *resource.Resource {
 	)
 }
 
-type ctxKey struct{}
+// Shutdown shuts down the tracer provider and exporter.
+func (t Tracer) Shutdown(ctx context.Context) error {
+	var err error
 
-// FromContext returns the OTel Tracer associated with the given context.
-// If there is no tracer, it will panic.
+	if shutdownErr := t.tracerProvider.Shutdown(ctx); shutdownErr != nil {
+		err = fmt.Errorf("shutting down otel tracer provider: %w", shutdownErr)
+	}
+
+	if shutdownErr := t.exporter.Shutdown(ctx); shutdownErr != nil {
+		err = fmt.Errorf("shutting down otel tracer exporter: %w", shutdownErr)
+	}
+
+	return err
+}
+
+// FromContext returns the OpenTelemetry tracer associated with the given context.
 func FromContext(ctx context.Context) trace.Tracer {
 	if ctx == nil {
 		panic("nil context passed to tracer")
@@ -124,24 +122,23 @@ func FromContext(ctx context.Context) trace.Tracer {
 	return t
 }
 
+// Start starts a new span with the given name and attributes.
 func Start(ctx context.Context, spanName string, attrs ...attribute.KeyValue) (context.Context, trace.Span) {
 	return FromContext(ctx).Start(ctx, spanName, trace.WithAttributes(attrs...))
 }
 
-// WithTracer returns a new context derived from ctx that
-// is associated with the given tracer.
+// WithTracer returns a new context derived from parent that is associated with the given tracer.
 func WithTracer(parent context.Context, t trace.Tracer) context.Context {
 	return context.WithValue(parent, ctxKey{}, t)
 }
 
-// HandleUnexpectedError adds the information regarding the error on the current span and logs.
+// HandleUnexpectedError records an error in the current span and logs it.
 func HandleUnexpectedError(ctx context.Context, err error, fields ...zap.Field) {
 	trace.SpanFromContext(ctx).RecordError(err)
 	Logger(ctx).With(append(fields, zap.Error(err))...).Error("unexpected error")
 }
 
 // TracerToContextMiddleware associates a tracer with the current context.
-
 func TracerToContextMiddleware(tracer trace.Tracer) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
@@ -152,3 +149,6 @@ func TracerToContextMiddleware(tracer trace.Tracer) echo.MiddlewareFunc {
 		}
 	}
 }
+
+// ctxKey is the type used for the context key for storing the tracer.
+type ctxKey struct{}
