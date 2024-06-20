@@ -121,7 +121,7 @@ func InitMetricsCollector(metrics Prometheus) {
 
 	metrics.API_ActiveRequestGauge = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: PREFIXO + "api_active_requests+GAUGE",
+			Name: PREFIXO + "api_active_requests" + GAUGE,
 			Help: "Number of active API requests.",
 		},
 	)
