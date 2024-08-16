@@ -39,7 +39,7 @@ var tracer trace.Tracer
 var (
 	SERVICE_NAME           = "myapp"
 	SERVICE_NAMESPACE      = "mynamespace"
-	COLLECTOR_ENDPOINT     = "0.0.0.0:4317"
+	COLLECTOR_ENDPOINT1111 = "0.0.0.0:4317"
 	DEPLOYMENT_ENVIRONMENT = "production"
 	SAMPLING_RATIO         = 1.0
 )
@@ -49,7 +49,7 @@ func NewTracer(ctx context.Context, prefix, appVersion string) (Tracer, error) {
 	cfg := TracerConfig{
 		ServiceName:      SERVICE_NAME,
 		ServiceNamespace: SERVICE_NAMESPACE,
-		Endpoint:         COLLECTOR_ENDPOINT,
+		Endpoint1111:     COLLECTOR_ENDPOINT,
 		Environment:      DEPLOYMENT_ENVIRONMENT,
 		SamplingRatio:    SAMPLING_RATIO,
 	}

@@ -33,7 +33,6 @@ func NewUserHandle(service *service.UserService, metrics telemetria.Prometheus, 
 
 func (h *UserHandle) GetUser(c echo.Context) error {
 	start := time.Now()
-
 	ctx := c.Request().Context()
 	ctx, span := h.Tracer.Start(ctx, "Handler.GetUser")
 	defer span.End()
@@ -42,13 +41,16 @@ func (h *UserHandle) GetUser(c echo.Context) error {
 
 	var status string
 	defer func() {
+		if status == "" {
+			status = strconv.Itoa(http.StatusOK) // status padrão
+		}
 		h.Metrics.HTTP_StartRequestCounter.WithLabelValues(telemetria.LABEL_PREFIXO+"user_api", status).Inc()
 	}()
 
 	var mr models.User
 	if err := c.Bind(&mr); err != nil {
-		logger.Error("error on bind json", zap.Error(err))
-		status = "4xx"
+		status = strconv.Itoa(http.StatusBadRequest)
+		h.handleError(span, logger, "error on bind json", err, http.StatusBadRequest)
 		return echo.NewHTTPError(http.StatusBadRequest, "Invalid request payload")
 	}
 
@@ -59,11 +61,14 @@ func (h *UserHandle) GetUser(c echo.Context) error {
 
 	result, err := h.Service.GetUser(ctx, mr.User)
 	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
-		logger.Error("failed to get user", zap.Error(err))
 		status = strconv.Itoa(http.StatusInternalServerError)
+		h.handleError(span, logger, "failed to get user", err, http.StatusInternalServerError)
 		return echo.NewHTTPError(http.StatusInternalServerError, "Internal Server Error")
+	}
+
+	if err != nil {
+		status = strconv.Itoa(http.StatusInternalServerError)
+		return h.handleError(span, logger, "failed to get user", err, http.StatusInternalServerError)
 	}
 
 	logger.Info("user data", zap.String("user", mr.User), zap.String("data", result))
@@ -80,4 +85,11 @@ func (h *UserHandle) GetUser(c echo.Context) error {
 	h.Metrics.API_CreateRequestDuration.WithLabelValues(telemetria.LABEL_PREFIXO+"api_duration", strconv.Itoa(int(duration.Milliseconds()))).Observe(duration.Seconds())
 
 	return c.String(http.StatusOK, result)
+}
+
+func (h *UserHandle) handleError(span trace.Span, logger *zap.Logger, msg string, err error, httpStatus int) *HTTPError {
+	span.RecordError(err)
+	span.SetStatus(codes.Error, err.Error())
+	logger.Error(msg, zap.Error(err))
+	return echo.NewHTTPError(httpStatus, msg)
 }

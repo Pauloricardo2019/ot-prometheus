@@ -4,17 +4,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-const (
-	StatusOK      = "ok"
-	StatusError   = "error"
-	StatusHit     = "hit"
-	StatusMiss    = "miss"
-	StatusTrue    = "true"
-	StatusFalse   = "false"
-	StatusSuccess = "success"
-	StatusFailure = "failure"
-)
-
 // Prometheus encapsulates all the API metrics.
 type Prometheus struct {
 	ApiMetrics
